@@ -1,0 +1,963 @@
+<script>window.enableEventObserver=true</script>
+<script>window.enableDateFieldSelectInputs=false</script>
+<script>window.CDN="https://cdn.jotfor.ms/"</script>
+<script>window.umdRootPath="https://cdn.jotfor.ms/s/umd/e9502ad9235/"</script>
+<script>window.staticRootPath="https://cdn.jotfor.ms/s/static/e9502ad9235/"</script>
+<!--[if lt IE 9]>
+<script src="https://cdn.jotfor.ms/s/static/e9502ad9235/js/vendor/flashcanvas.js" type="text/javascript"></script>
+<![endif]-->
+<script src="https://cdn.jotfor.ms/s/static/e9502ad9235/js/vendor/jquery-3.7.1.min.js" type="text/javascript"></script>
+<script src="https://cdn.jotfor.ms/s/static/e9502ad9235/js/vendor/jSignature/jSignature.js" type="text/javascript"></script>
+<script src="https://cdn.jotfor.ms/s/static/e9502ad9235/js/vendor/jSignature/jSignature.CompressorBase30.js" type="text/javascript"></script>
+<script src="https://cdn.jotfor.ms/s/static/e9502ad9235/js/vendor/jSignature/jSignature.CompressorSVG.js" type="text/javascript"></script>
+<script src="https://cdn.jotfor.ms/s/static/e9502ad9235/js/vendor/jSignature/jSignature.UndoButton.js" type="text/javascript"></script>
+<script src="https://cdn.jotfor.ms/s/static/e9502ad9235/js/vendor/jotform.signaturepad.new.js" type="text/javascript"></script>
+<script src="https://cdn.jotfor.ms/s/static/e9502ad9235/secure-message-bus.js" type="text/javascript"></script>
+<script src="https://cdn.jotfor.ms/s/static/e9502ad9235/static/prototype.forms.js" type="text/javascript"></script>
+<script src="https://cdn.jotfor.ms/s/static/e9502ad9235/static/jotform.forms.js" type="text/javascript"></script>
+<script src="https://cdn.jotfor.ms/s/static/e9502ad9235/js/vendor/maskedinput_5.0.9.min.js" type="text/javascript"></script>
+<script src="https://cdn.jotfor.ms/s/static/e9502ad9235/js/punycode-1.4.1.min.js" type="text/javascript" defer></script>
+<script src="https://cdn.jotfor.ms/s/static/e9502ad9235/js/vendor/imageinfo.js" type="text/javascript"></script>
+<script src="https://cdn.jotfor.ms/s/static/e9502ad9235/file-uploader/fileuploader.js" type="text/javascript"></script>
+<script src="https://cdn.jotfor.ms/s/umd/e9502ad9235/for-signature.js" type="text/javascript"></script>
+<script src="https://cdn.jotfor.ms/s/umd/e9502ad9235/for-widgets-server.js" type="text/javascript"></script>
+<script src="https://cdn.jotfor.ms/s/umd/e9502ad9235/for-aria-notify-polyfill.js" type="text/javascript"></script>
+<script src="https://cdn.jotfor.ms/s/umd/e9502ad9235/for-form-field-tracker.js" type="text/javascript" defer></script>
+<script src="https://cdn.jotfor.ms/s/umd/e9502ad9235/for-pdfimporter-patch.js" type="text/javascript"></script>
+<script src="https://cdn.jotfor.ms/s/static/e9502ad9235/js/vendor/smoothscroll.min.js" type="text/javascript"></script>
+<script src="https://cdn.jotfor.ms/s/static/e9502ad9235/js/errorNavigation.js" type="text/javascript"></script>
+<script type="text/javascript">	JotForm.newDefaultTheme = true;
+	JotForm.extendsNewTheme = false;
+	// {GPT_APP_SCRIPT}
+	JotForm.CDN_VENDOR_PATH = "https://cdn.jotfor.ms/s/vendor/static";
+	JotForm.singleProduct = false;
+	JotForm.newPaymentUIForNewCreatedForms = true;
+	JotForm.texts = {"confirmEmail":"E-mail does not match","pleaseWait":"Please wait...","validateEmail":"You need to validate this e-mail","confirmClearForm":"Are you sure you want to clear the form","lessThan":"Your score should be less than or equal to","incompleteFields":"There are incomplete required fields. Please complete them.","required":"This field is required.","requireOne":"At least one field required.","requireEveryRow":"Every row is required.","requireEveryCell":"Every cell is required.","email":"Enter a valid e-mail address","alphabetic":"This field can only contain letters","numeric":"This field can only contain numeric values","alphanumeric":"This field can only contain letters and numbers.","customRegex":"This field does not match the required format.","cyrillic":"This field can only contain cyrillic characters","url":"This field can only contain a valid URL","currency":"This field can only contain currency values.","fillMask":"Field value must fill mask.","uploadExtensions":"You can only upload following files:","noUploadExtensions":"File has no extension file type (e.g. .txt, .png, .jpeg)","uploadFilesize":"File size cannot be bigger than:","uploadFilesizemin":"File size cannot be smaller than:","gradingScoreError":"Score total should only be less than or equal to","inputCarretErrorA":"Input should not be less than the minimum value:","inputCarretErrorB":"Input should not be greater than the maximum value:","maxDigitsError":"The maximum digits allowed is","minCharactersError":"The number of characters should not be less than the minimum value:","maxCharactersError":"The number of characters should not be more than the maximum value:","freeEmailError":"Free email accounts are not allowed","minSelectionsError":"The minimum required number of selections is","maxSelectionsError":"The maximum number of selections allowed is","pastDatesDisallowed":"Date must not be in the past.","dateLimited":"This date is unavailable.","dateInvalid":"This date is not valid. The date format is {format}","dateInvalidSeparate":"This date is not valid. Enter a valid {element}.","ageVerificationError":"You must be older than {minAge} years old to submit this form.","multipleFileUploads_typeError":"{file} has invalid extension. Only {extensions} are allowed.","multipleFileUploads_sizeError":"{file} is too large, maximum file size is {sizeLimit}.","multipleFileUploads_minSizeError":"{file} is too small, minimum file size is {minSizeLimit}.","multipleFileUploads_emptyError":"{file} is empty, please select files again without it.","multipleFileUploads_uploadFailed":"File upload failed, please remove it and upload the file again.","multipleFileUploads_onLeave":"The files are being uploaded, if you leave now the upload will be cancelled.","multipleFileUploads_fileLimitError":"Only {fileLimit} file uploads allowed.","multipleFileUploads_invalidCharError":"{file} cannot be uploaded because its name contains a \"#\" character. Please rename the file and try again.","dragAndDropFilesHere_infoMessage":"Drag and drop files here","chooseAFile_infoMessage":"Choose a file","maxFileSize_infoMessage":"Max. file size","generalError":"There are errors on the form. Please fix them before continuing.","generalPageError":"There are errors on this page. Please fix them before continuing.","wordLimitError":"Too many words. The limit is","wordMinLimitError":"Too few words.  The minimum is","characterLimitError":"Too many Characters.  The limit is","characterMinLimitError":"Too few characters. The minimum is","ccInvalidNumber":"Credit Card Number is invalid.","ccInvalidCVC":"CVC number is invalid.","ccInvalidExpireDate":"Expire date is invalid.","ccInvalidExpireMonth":"Expiration month is invalid.","ccInvalidExpireYear":"Expiration year is invalid.","ccMissingDetails":"Please fill up the credit card details.","ccMissingProduct":"Please select at least one product.","ccMissingDonation":"Please enter numeric values for donation amount.","disallowDecimals":"Please enter a whole number.","restrictedDomain":"This domain is not allowed","ccDonationMinLimitError":"Minimum amount is {minAmount} {currency}","requiredLegend":"All fields marked with * are required and must be filled.","geoPermissionTitle":"Permission Denied","geoPermissionDesc":"Check your browser's privacy settings.","geoNotAvailableTitle":"Position Unavailable","geoNotAvailableDesc":"Location provider not available. Please enter the address manually.","geoTimeoutTitle":"Timeout","geoTimeoutDesc":"Please check your internet connection and try again.","selectedTime":"Selected Time","formerSelectedTime":"Former Time","cancelAppointment":"Cancel Appointment","cancelSelection":"Cancel Selection","confirmSelection":"Confirm Selection","noSlotsAvailable":"No slots available","slotUnavailable":"{time} on {date} has been selected is unavailable. Please select another slot.","multipleError":"There are {count} errors on this page. Please correct them before moving on.","oneError":"There is {count} error on this page. Please correct it before moving on.","doneMessage":"Well done! All errors are fixed.","invalidTime":"Enter a valid time","doneButton":"Done","reviewSubmitText":"Review and Submit","nextButtonText":"Next","prevButtonText":"Previous","seeErrorsButton":"See Errors","notEnoughStock":"Not enough stock for the current selection","notEnoughStock_remainedItems":"Not enough stock for the current selection ({count} items left)","soldOut":"Sold Out","justSoldOut":"Just Sold Out","selectionSoldOut":"Selection Sold Out","subProductItemsLeft":"({count} items left)","startButtonText":"START","submitButtonText":"Submit","submissionLimit":"Sorry! Only one entry is allowed. \u003Cbr\u003E Multiple submissions are disabled for this form.","reviewBackText":"Back to Form","seeAllText":"See All","progressMiddleText":"of","fieldError":"field has an error.","error":"Error"};
+	JotForm.newPaymentUI = true;
+	JotForm.importedPDF = "aHR0cHMlM0ElMkYlMkZ3d3cuam90Zm9ybS5jb20lMkZ1cGxvYWRzJTJGcHJveWVjdG9zaWFiaW9tZWRpY2ElMkZmb3JtX2ZpbGVzJTJGcGZjX2ZsXzZhMjhmNjgwZWEzZThfSUFCX09yZGVuX1NlcnZpY2lvXzIwMjNfVjYucGRmJTNGbmMlM0Qx";
+	JotForm.importedPDFSettings = {"isConnected":"Yes","enableThumbnail":"No","hasPreviewButton":"No","startButtonText":"Iniciar","formType":"legacyForm","welcomeThumbnail":""};
+	JotForm.originalLanguage = "es";
+	JotForm.isFormViewTrackingAllowed = true;
+	JotForm.replaceTagTest = true;
+	JotForm.activeRedirect = "thanktext";
+	JotForm.uploadServerURL = "https://upload.jotform.com/upload";
+
+   JotForm.setConditions([{"action":[{"id":"action_1779325244158","visibility":"Require","field":"137","isError":false}],"id":"1779340128399","index":"1","link":"Any","priority":"1","terms":[{"id":"term_1779325244158","field":"79","operator":"isEmpty","value":"","isError":false}],"type":"require"}]);	JotForm.clearFieldOnHide="dontClear";
+	JotForm.submitError="jumpToFirstError";
+	JotForm.isFullSource = true;
+
+	JotForm.init(function(){
+	/*INIT-START*/
+
+ JotForm.calendarMonths = ["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
+ if (!JotForm.calenderViewMonths) JotForm.calenderViewMonths = {};  JotForm.calenderViewMonths[62] = ["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
+ if (!JotForm.calenderViewDays) JotForm.calenderViewDays = {};  JotForm.calenderViewDays[62] = ["Domingo","Lunes","Martes","Miércoles","Jueves","Viernes","Sábado","Domingo"];
+ JotForm.calendarDays = ["Domingo","Lunes","Martes","Miércoles","Jueves","Viernes","Sábado","Domingo"];
+ JotForm.calendarOther = {"today":"Hoy"};
+ var languageOptions = document.querySelectorAll('#langList li'); 
+ for(var langIndex = 0; langIndex < languageOptions.length; langIndex++) { 
+   languageOptions[langIndex].on('click', function(e) { setTimeout(function(){ JotForm.setCalendar("62", false, {"days":{"monday":true,"tuesday":true,"wednesday":true,"thursday":true,"friday":true,"saturday":true,"sunday":true},"future":true,"past":true,"custom":false,"ranges":false,"start":"","end":"","countSelectedDaysOnly":false}); }, 0); });
+ } 
+ JotForm.onTranslationsFetch(function() { JotForm.setCalendar("62", false, {"days":{"monday":true,"tuesday":true,"wednesday":true,"thursday":true,"friday":true,"saturday":true,"sunday":true},"future":true,"past":true,"custom":false,"ranges":false,"start":"","end":"","countSelectedDaysOnly":false}); });
+ JotForm.formatDate({date:(new Date()), dateField:$("id_"+62)});
+ JotForm.displayLocalTime("input_62_hourSelect", "input_62_minuteSelect","input_62_ampm", "input_62_timeInput", false);
+
+ JotForm.calendarMonths = ["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
+ if (!JotForm.calenderViewMonths) JotForm.calenderViewMonths = {};  JotForm.calenderViewMonths[63] = ["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
+ if (!JotForm.calenderViewDays) JotForm.calenderViewDays = {};  JotForm.calenderViewDays[63] = ["Domingo","Lunes","Martes","Miércoles","Jueves","Viernes","Sábado","Domingo"];
+ JotForm.calendarDays = ["Domingo","Lunes","Martes","Miércoles","Jueves","Viernes","Sábado","Domingo"];
+ JotForm.calendarOther = {"today":"Hoy"};
+ var languageOptions = document.querySelectorAll('#langList li'); 
+ for(var langIndex = 0; langIndex < languageOptions.length; langIndex++) { 
+   languageOptions[langIndex].on('click', function(e) { setTimeout(function(){ JotForm.setCalendar("63", false, {"days":{"monday":true,"tuesday":true,"wednesday":true,"thursday":true,"friday":true,"saturday":true,"sunday":true},"future":true,"past":true,"custom":false,"ranges":false,"start":"","end":"","countSelectedDaysOnly":false}); }, 0); });
+ } 
+ JotForm.onTranslationsFetch(function() { JotForm.setCalendar("63", false, {"days":{"monday":true,"tuesday":true,"wednesday":true,"thursday":true,"friday":true,"saturday":true,"sunday":true},"future":true,"past":true,"custom":false,"ranges":false,"start":"","end":"","countSelectedDaysOnly":false}); });
+ JotForm.formatDate({date:(new Date()), dateField:$("id_"+63)});
+ JotForm.displayLocalTime("input_63_hourSelect", "input_63_minuteSelect","input_63_ampm", "input_63_timeInput", false);
+      JotForm.description('input_63', 'Coloque la fecha y hora en la que concluyo el servicio');
+if (window.JotForm && JotForm.accessible) $('input_10').setAttribute('tabindex',0);
+if (window.JotForm && JotForm.accessible) $('input_14').setAttribute('tabindex',0);
+      JotForm.setPhoneMaskingValidator( 'input_64_full', '\u0028\u0023\u0023\u0023\u0029 \u0023\u0023\u0023\u002d\u0023\u0023\u0023\u0023' );
+if (window.JotForm && JotForm.accessible) $('input_11').setAttribute('tabindex',0);
+if (window.JotForm && JotForm.accessible) $('input_12').setAttribute('tabindex',0);
+if (window.JotForm && JotForm.accessible) $('input_13').setAttribute('tabindex',0);
+if (window.JotForm && JotForm.accessible) $('input_15').setAttribute('tabindex',0);
+if (window.JotForm && JotForm.accessible) $('input_16').setAttribute('tabindex',0);
+if (window.JotForm && JotForm.accessible) $('input_19').setAttribute('tabindex',0);
+if (window.JotForm && JotForm.accessible) $('input_68').setAttribute('tabindex',0);
+if (window.JotForm && JotForm.accessible) $('input_69').setAttribute('tabindex',0);
+if (window.JotForm && JotForm.accessible) $('input_70').setAttribute('tabindex',0);
+if (window.JotForm && JotForm.accessible) $('input_71').setAttribute('tabindex',0);
+if (window.JotForm && JotForm.accessible) $('input_26').setAttribute('tabindex',0);
+if (window.JotForm && JotForm.accessible) $('input_39').setAttribute('tabindex',0);
+if (window.JotForm && JotForm.accessible) $('input_57').setAttribute('tabindex',0);
+if (window.JotForm && JotForm.accessible) $('input_46').setAttribute('tabindex',0);
+if (window.JotForm && JotForm.accessible) $('input_136').setAttribute('tabindex',0);
+      JotForm.alterTexts({"ageVerificationError":"Debe ser mayor de {minAge} años para enviar este formulario.","alphabetic":"Este campo solo puede contener letras.","alphanumeric":"Este campo solo puede contener letras y números.","appointmentSelected":"Ha seleccionado {time} el {date}","cancelAppointment":"Cancelar cita","cancelSelection":"Cancelar selección","ccDonationMinLimitError":"La cantidad mínima es {minAmount} {currency}","ccInvalidCVC":"El número CVC no es válido.","ccInvalidExpireDate":"La fecha de expiración no es válida","ccInvalidExpireMonth":"Expiration month is invalid.","ccInvalidExpireYear":"Expiration year is invalid.","ccInvalidNumber":"El número de su tarjeta de crédito no es válido.","ccMissingDetails":"Por favor ingrese los datos de la tarjeta de crédito.","ccMissingDonation":"Escriba los valores numéricos de la cantidad a donar.","ccMissingProduct":"Por favor seleccione al menos un producto.","characterLimitError":"Demasiados caracteres. El límite es","characterMinLimitError":"Muy pocos caracteres. El mínimum es","chooseAFile_infoMessage":"Elegir un archivo","confirmClearForm":"¿Está seguro que desea limpiar el formulario?","confirmEmail":"El correo electrónico no coincide","confirmSelection":"Confirm Selection","currency":"Este campo sólo puede contener valores de moneda.","cyrillic":"Este campo solo puede contener caracteres cirílicos.","dateInvalid":"Esta fecha no es valida. El formato de fecha es {format}","dateInvalidSeparate":"Esta fecha no es válida. Ponga una {element} válida","dateLimited":"Esta fecha no está disponible.","disallowDecimals":"Por favor, introduzca un número entero.","doneButton":"Listo","doneMessage":"Bien hecho! Todos los errores resueltos.","dragAndDropFilesHere_infoMessage":"Arrastre y suelte archivos aquí","email":"Introduzca una dirección e-mail válida","error":"error","fieldError":"El campo tiene un error.","fillMask":"El valor de este campo debe llenar la mascara","formerSelectedTime":"Hora anterior","freeEmailError":"No se permiten cuentas de correo gratuitas","generalError":"Existen errores en el formulario, por favor corríjalos antes de continuar.","generalPageError":"Hay errores en esta página. Por favor, corríjalos antes de continuar.","geoNotAvailableDesc":"Location provider not available. Please enter the address manually.","geoNotAvailableTitle":"Position Unavailable","geoPermissionDesc":"Check your browser's privacy settings.","geoPermissionTitle":"Permission Denied","geoTimeoutDesc":"Please check your internet connection and try again.","geoTimeoutTitle":"Timeout","gradingScoreError":"El puntaje total debería ser sólo &quot;menos que&quot; o &quot;igual que&quot;","incompleteFields":"Existen campos requeridos incompletos. Por favor complételos.","inputCarretErrorA":"La entrada no debe ser inferior al valor mínimo:","inputCarretErrorB":"La entrada debe ser menor al valor:","invalidTime":"Introduzca una hora válida","justSoldOut":"Se acaba de agotar","lessThan":"Su puntuación debería ser menor o igual que","maxCharactersError":"The number of characters should not be more than the maximum value:","maxDigitsError":"El máximo de dígitos permitido es","maxFileSize_infoMessage":"Máximo tamaño de archivo","maxSelectionsError":"El número máximo de selecciones permitidas es","minCharactersError":"El número de caracteres no debería ser menos que el valor mínimo:","minSelectionsError":"El número mínimo de opciones obligatorias es","multipleError":"Hay {count} errores en esta página. Favor corregirlos antes de continuar.","multipleFileUploads_emptyError":"El archivo {file} está vacío; por favor, seleccione de nuevo los archivos sin él.","multipleFileUploads_fileLimitError":"Solo se permite subir {fileLimit} archivo(s)","multipleFileUploads_minSizeError":"El archivo {file} es demasiado pequeño, el tamaño mínimo es: {minSizeLimit}.","multipleFileUploads_onLeave":"Se están cargando los archivos, si cierra ahora, se cancelará dicha carga.","multipleFileUploads_sizeError":"El archivo {file} es demasiado grande; el tamaño del archivo no debe superar {sizeLimit}.","multipleFileUploads_typeError":"El archivo {file} posee una extensión no permitida. Solo están permitidas las extensiones {extensions}.","multipleFileUploads_uploadFailed":"Carga de archivo fallida, favor remover y cargar de nuevo.","nextButtonText":"Siguiente","noSlotsAvailable":"No hay cupos disponibles","notEnoughStock":"No hay suficientes existencias para la selección actual","notEnoughStock_remainedItems":"No hay suficientes existencias para la selección actual (quedan {count} artículos)","noUploadExtensions":"File has no extension file type (e.g. .txt, .png, .jpeg)","numeric":"Este campo sólo admite valores numéricos.","oneError":"Hay {count} error en esta página. Favor corregirlo antes de continuar.","pastDatesDisallowed":"La fecha debe ser futura","pleaseWait":"Por favor, espere ...","prevButtonText":"Atrás","progressMiddleText":"de","required":"Este campo es obligatorio.","requiredLegend":"Todos los campos marcados con * son obligatorios y deben llenarse.","requireEveryCell":"Se requieren todas las celdas.","requireEveryRow":"Todas las filas son obligatorias.","requireOne":"Al menos un campo obligatorio.","restrictedDomain":"This domain is not allowed","reviewBackText":"Ir al formulario","reviewSubmitText":"Revisar y enviar","seeAllText":"Mostrar todos","seeErrorsButton":"Ver Errores","selectedTime":"Hora seleccionada","selectionSoldOut":"Selección agotada","slotUnavailable":"La hora {time} del día {date} ha sido ocupada. Escoja otro intervalo.","soldOut":"Agotado","startButtonText":"COMENZAR","submissionLimit":"Lo sentimos. Sólo se permite una entrada. \u003Cbr\u003E Los envíos múltiples están deshabilitados para este formulario.","submitButtonText":"Enviar","subProductItemsLeft":"(quedan {count} productos)","uploadExtensions":"Solo puede subir los siguientes archivos:","uploadFilesize":"Tamaño del archivo no puede ser mayor que:","uploadFilesizemin":"Tamañao de archivo no puede ser menos de:","url":"Este campo solo contiene una URL válida.","validateEmail":"Usted necesita validar este e-mail","wordLimitError":"Demasiadas palabras. El límite es","wordMinLimitError":"Muy pocas palabras. El mínimo es"});
+      setTimeout(function() {
+          JotForm.initMultipleUploads();
+      }, 2);
+	/*INIT-END*/
+	});
+
+   setTimeout(function() {
+JotForm.paymentExtrasOnTheFly([null,{"name":"ordende","qid":"1","text":"ORDEN DE TRABAJO","type":"control_head"},null,{"name":"fechade","qid":"3","text":"FECHA DE SERVICIO","type":"control_text"},null,null,null,null,{"name":"unidadm","qid":"8","text":"UNIDAD MEDICA","type":"control_head"},{"name":"datosdel","qid":"9","text":"DATOS DEL EQUIPO","type":"control_head"},{"description":"","name":"unidad","qid":"10","subLabel":"","text":"UNIDAD:","type":"control_textbox"},{"description":"","name":"equipo","qid":"11","subLabel":"","text":"EQUIPO:","type":"control_textbox"},{"description":"","name":"marca","qid":"12","subLabel":"","text":"MARCA:","type":"control_textbox"},{"description":"","name":"modelo","qid":"13","subLabel":"","text":"MODELO:","type":"control_textbox"},{"description":"","name":"domicilio","qid":"14","subLabel":"","text":"DOMICILIO:","type":"control_textbox"},{"description":"","name":"serie","qid":"15","subLabel":"","text":"SERIE:","type":"control_textbox"},{"description":"","name":"inventario","qid":"16","subLabel":"","text":"INVENTARIO:","type":"control_textbox"},null,null,{"description":"","name":"reao","qid":"19","subLabel":"","text":"AREA O UBICACION:","type":"control_textbox"},{"description":"","name":"tipode","qid":"20","text":"TIPO DE SERVICIO O MANTENIMIENTO","type":"control_checkbox"},{"description":"","name":"clasificacin","qid":"21","text":"CLASIFICACION DE LA REPARACION","type":"control_checkbox"},{"description":"","name":"equipode","qid":"22","text":"EQUIPO DE MEDICION Y\u002FO SIMULADOR UTILIZADO","type":"control_checkbox"},{"description":"","name":"datosdel23","qid":"23","text":"DATOS DEL EQUIPO DE CALIBRACION","type":"control_checkbox"},{"description":"","name":"resultadode","qid":"24","text":"DOCUMENTACION GENERADA Y ANEXADA:","type":"control_checkbox"},null,{"description":"","name":"otros","qid":"26","subLabel":"DOCUMENTACION GENERADA Y ANEXADA:","text":"OTROS:","type":"control_textbox"},null,{"description":"","name":"1Limpieza","qid":"28","text":"1.- LIMPIEZA Y DESINFECCI N DEL EQUIPO CON PRUEBAS DE FUNCIONAMIENTO GENERAL","type":"control_checkbox"},{"description":"","name":"2condiciones","qid":"29","text":"2.- CONDICIONES ESTETICAS DEL EQUIPO","type":"control_checkbox"},null,{"description":"","name":"3revisi","qid":"31","text":"3.- REVISION DE CONDICIONES OPERATIVAS DEL EQUIPO","type":"control_checkbox"},null,{"description":"","name":"4cambio","qid":"33","text":"5.- CAMBIO DE REFACCIONES","type":"control_checkbox"},null,null,{"description":"","name":"5operatividad","qid":"36","text":"6.- OPERATIVIDAD: APTO PARA PACIENTE","type":"control_checkbox"},null,{"name":"tecnovigilancia","qid":"38","text":"TECNOVIGILANCIA","type":"control_head"},{"description":"","mde":"No","name":"detallede","qid":"39","subLabel":"","text":"DETALLE DE FUNCIONALIDAD:","type":"control_textarea","wysiwyg":"Disable"},null,null,{"name":"ingenierode","qid":"42","text":"INGENIERO DE SERVICIO","type":"control_head"},{"name":"responsableo","qid":"43","text":"RESPONSABLE O JEFE DE AREA","type":"control_head"},null,null,{"description":"","name":"nombrey46","qid":"46","subLabel":"Nombre completo","text":"RESPONSABLE DE AREA","type":"control_textbox"},null,null,null,null,null,null,null,null,null,null,{"description":"","mde":"No","name":"observaciones","qid":"57","subLabel":"","text":"OBSERVACIONES:","type":"control_textarea","wysiwyg":"Disable"},null,null,{"name":"enviar","qid":"60","text":"Enviar","type":"control_button"},{"name":"idUnico","qid":"61","text":"ID unico","type":"control_autoincrement"},{"description":"","name":"fechaDe62","qid":"62","text":"Fecha de Inicio:","type":"control_datetime"},{"description":"Coloque la fecha y hora en la que concluyo el servicio","name":"fechaDe63","qid":"63","text":"Fecha de Fin:","type":"control_datetime"},{"description":"","name":"telefono","qid":"64","text":"TELEFONO:","type":"control_phone"},{"description":"","name":"email","qid":"65","subLabel":"Ingrese una direccion de correo valida","text":"EMAIL","type":"control_email"},{"description":"","name":"entidad","qid":"66","subLabel":"","text":"ENTIDAD:","type":"control_dropdown"},{"name":"divisor","qid":"67","text":"Divisor","type":"control_divider"},{"description":"","name":"otro","qid":"68","subLabel":"TIPO DE SERVICIO O MANTENIMIENTO","text":"OTRO:","type":"control_textbox"},{"description":"","name":"otro69","qid":"69","subLabel":"CLASIFICACION DE LA REPARACION","text":"OTRO:","type":"control_textbox"},{"description":"","name":"otro70","qid":"70","subLabel":"EQUIPO DE MEDICION Y\u002FO SIMULADOR UTILIZADO","text":"OTRO:","type":"control_textbox"},{"description":"","name":"otro71","qid":"71","subLabel":"DATOS DEL EQUIPO DE CALIBRACION","text":"OTRO:","type":"control_textbox"},null,{"description":"","name":"certificadoDe","qid":"73","subLabel":"","text":"CERTIFICADO DE CALIBRACION VIGENTE ANO:","type":"control_dropdown"},null,{"name":"descripcionDel","qid":"75","text":"DESCRIPCION DEL SERVICIO","type":"control_head"},{"name":"estatusDe","qid":"76","text":"ESTATUS DE SEGUIMIENTO","type":"control_head"},{"description":"","name":"escribaUna","qid":"77","text":"","type":"control_checkbox"},{"description":"","name":"firma","qid":"78","subLabel":"","text":"Firma","type":"control_signature"},{"description":"","name":"firma79","qid":"79","subLabel":"","text":"Firma","type":"control_signature"},null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,{"name":"separadorDe","qid":"103","text":"Separador de pagina","type":"control_pagebreak"},{"description":"","name":"equipoFallo","qid":"104","subLabel":"","text":"¿EQUIPO FALLO CON PACIENTE?","type":"control_dropdown"},{"description":"","name":"equipoFallo105","qid":"105","subLabel":"","text":"¿EQUIPO FALLO Y DANO A PACIENTE?","type":"control_dropdown"},null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,{"description":"","name":"ingenieroDe127","qid":"127","subLabel":"","text":"INGENIERO DE SERVICIO:","type":"control_dropdown"},null,null,null,null,null,{"name":"escribaUna133","qid":"133","text":"Valores de Medicion","type":"control_widget"},null,null,{"description":"","name":"jefeDe","qid":"136","subLabel":"Nombre completo","text":"JEFE DE BIOMEDICA","type":"control_textbox"},{"description":"","name":"firma137","qid":"137","subLabel":"","text":"Firma","type":"control_signature"},null,null,null,null,null,null,null,null,null,{"description":"","name":"cargaDe","qid":"147","subLabel":"","text":"Carga de archivo","type":"control_fileupload"},null,null,null,null,null,null,null,{"description":"","name":"4Reparacion","qid":"155","text":"4.- REPARACION DE EQUIPO","type":"control_checkbox"},null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,{"name":"divisor171","qid":"171","text":"Divisor","type":"control_divider"},null,null,null,null,null,null,null,null,null,null,null,{"name":"tags","qid":"183","text":"Tags","type":"control_checkbox"}]);}, 20); 
+</script>
+<link type="text/css" rel="stylesheet" href="https://cdn.jotfor.ms/s/static/e9502ad9235/css/styles/formAdvancedSignature.css" />
+<link type="text/css" rel="stylesheet" href="https://cdn.jotfor.ms/stylebuilder/static/form-common.css?v=15c87c2
+"/>
+<style type="text/css">@media print{*{-webkit-print-color-adjust: exact !important;color-adjust: exact !important;}.form-section{display:inline!important}.form-pagebreak{display:none!important}.form-section-closed{height:auto!important}.page-section{position:initial!important}}</style>
+
+      <style type="text/css">
+        .sr-only {
+          position: absolute;
+          width: 1px;
+          height: 1px;
+          padding: 0;
+          margin: -1px;
+          overflow: hidden;
+          clip: rect(0, 0, 0, 0);
+          white-space: nowrap;
+          border: 0;
+        }
+      </style>
+    <link id="custom-font" type="text/css" rel="stylesheet" href="//cdn.jotfor.ms/fonts/?family=Inter" />
+<link type="text/css" rel="stylesheet" href="https://cdn.jotfor.ms/themes/CSS/5e6b428acc8c4e222d1beb91.css?v=4.1.75708"/>
+<link type="text/css" rel="stylesheet" href="https://cdn.jotfor.ms/s/static/e9502ad9235/css/styles/payment/payment_styles.css?4.1.75708" />
+<link type="text/css" rel="stylesheet" href="https://cdn.jotfor.ms/s/static/e9502ad9235/css/styles/payment/payment_feature.css?4.1.75708" />
+<link id="color-scheme-style" href="https://cdn.jotfor.ms/stylebuilder/static/color-scheme.css?v=4.1.75708" type="text/css" rel="stylesheet" />
+<style type="text/css" id="form-designer-style">
+    /* Injected CSS Code */
+/* Begining of advanced designer */
+
+/* 17 - INPUT WIDTHS */
+/*  20 - FORM PADDING */
+ul.form-section {
+  padding: 0px 38px;
+}
+/* Heights */
+/* 11 - LINE PADDING */
+/* LABEL STYLE */
+/* 12 - ROUNDED INPUTS */
+.form-radio-item,
+.form-checkbox-item {
+  padding-bottom: 0px;
+}
+.form-radio-item:last-child,
+.form-checkbox-item:last-child {
+  padding-bottom: 0;
+}
+.form-checkbox-item .form-checkbox + label,
+.form-checkbox-item .form-checkbox + span {
+  padding-left: 30px;
+}
+.form-radio-item .form-radio + label,
+.form-radio-item .form-radio + span {
+  padding-left: 30px;
+}
+.form-single-column .form-checkbox-item,
+.form-single-column .form-radio-item {
+  width: 100%;
+}
+.form-checkbox-item .editor-container div,
+.form-radio-item .editor-container div {
+  position: relative;
+}
+.form-checkbox-item .editor-container div:before,
+.form-radio-item .editor-container div:before {
+  display: inline-block;
+  vertical-align: middle;
+  left: 0;
+  width: 20px;
+  height: 20px;
+}
+.form-checkbox-item input,
+.form-radio-item input {
+  margin-top: 2px;
+}
+.form-line .form-checkbox:checked + label:before,
+.form-line .form-checkbox:checked + span:before {
+  background-color: #2e69ff;
+  border-color: #2e69ff;
+}
+.form-line .form-radio:checked + label:before,
+.form-line .form-radio:checked + span:before {
+  border-color: #2e69ff;
+}
+.form-line .form-radio:checked + label:after,
+.form-line .form-radio:checked + span:after {
+  background-color: #2e69ff;
+}
+.form-line .form-checkbox:hover + label:before,
+.form-line .form-checkbox:hover + span:before,
+.form-line .form-radio:hover + label:before,
+.form-line .form-radio:hover + span:before {
+  border-color: rgba(46, 105, 255, 0.5);
+  box-shadow: 0 0 0 2px rgba(46, 105, 255, 0.25);
+}
+.form-line .form-checkbox:focus + label:before,
+.form-line .form-checkbox:focus + span:before,
+.form-line .form-radio:focus + label:before,
+.form-line .form-radio:focus + span:before {
+  border-color: #2e69ff;
+  box-shadow: 0 0 0 3px rgba(46, 105, 255, 0.25);
+}
+.submit-button {
+  font-size: 16px;
+  font-weight: normal;
+  font-family: inherit;
+}
+.submit-button {
+  min-width: 180px;
+}
+.form-all .form-pagebreak-back,
+.form-all .form-pagebreak-next {
+  font-family: "Inter", sans-serif;
+  font-size: 16px;
+  font-weight: normal;
+}
+.form-all .form-pagebreak-back,
+.form-all .form-pagebreak-next {
+  min-width: 128px;
+}
+li[data-type="control_image"] div {
+  text-align: left;
+}
+li[data-type="control_image"] img {
+  border: none;
+  border-width: 0px !important;
+  border-style: solid !important;
+  border-color: false !important;
+}
+.supernova {
+  background-repeat: no-repeat;
+  background-attachment: scroll;
+  background-position: center top;
+  background-repeat: repeat;
+  background-attachment: fixed;
+  background-size: auto;
+  background-size: cover;
+}
+.supernova {
+  background-image: none;
+  background-image: url("https://www.jotform.com/uploads/proyectosiabiomedica/form_files/Background.6990b89d43c966.14519235.png");
+}
+#stage {
+  background-image: none;
+  background-image: url("https://www.jotform.com/uploads/proyectosiabiomedica/form_files/Background.6990b89d43c966.14519235.png");
+}
+/* | */
+.form-all {
+  background-repeat: no-repeat;
+  background-attachment: scroll;
+  background-position: center top;
+  background-size: cover;
+}
+.form-header-group {
+  background-repeat: no-repeat;
+  background-attachment: scroll;
+  background-position: center top;
+}
+.header-large h1.form-header {
+  font-size: 2em;
+}
+.header-large h2.form-header {
+  font-size: 1.5em;
+}
+.header-large h3.form-header {
+  font-size: 1.17em;
+}
+.header-large h1 + .form-subHeader {
+  font-size: 1em;
+}
+.header-large h2 + .form-subHeader {
+  font-size: .875em;
+}
+.header-large h3 + .form-subHeader {
+  font-size: .75em;
+}
+.header-default h1.form-header {
+  font-size: 2em;
+}
+.header-default h2.form-header {
+  font-size: 1.5em;
+}
+.header-default h3.form-header {
+  font-size: 1.17em;
+}
+.header-default h1 + .form-subHeader {
+  font-size: 1em;
+}
+.header-default h2 + .form-subHeader {
+  font-size: .875em;
+}
+.header-default h3 + .form-subHeader {
+  font-size: .75em;
+}
+.header-small h1.form-header {
+  font-size: 2em;
+}
+.header-small h2.form-header {
+  font-size: 1.5em;
+}
+.header-small h3.form-header {
+  font-size: 1.17em;
+}
+.header-small h1 + .form-subHeader {
+  font-size: 1em;
+}
+.header-small h2 + .form-subHeader {
+  font-size: .875em;
+}
+.header-small h3 + .form-subHeader {
+  font-size: .75em;
+}
+.form-header-group {
+  text-align: left;
+}
+div.form-header-group.header-large,
+div.form-header-group.hasImage {
+  margin: 0px -38px;
+}
+div.form-header-group.header-large,
+div.form-header-group.hasImage {
+  padding: 40px 52px;
+}
+.form-header-group .form-header,
+.form-header-group .form-subHeader {
+  color: #12458c;
+}
+.form-line-error {
+  -webkit-transition-property: none;
+  -moz-transition-property: none;
+  -ms-transition-property: none;
+  -o-transition-property: none;
+  transition-property: none;
+  -webkit-transition-duration: 0.3s;
+  -moz-transition-duration: 0.3s;
+  -ms-transition-duration: 0.3s;
+  -o-transition-duration: 0.3s;
+  transition-duration: 0.3s;
+  -webkit-transition-timing-function: ease;
+  -moz-transition-timing-function: ease;
+  -ms-transition-timing-function: ease;
+  -o-transition-timing-function: ease;
+  transition-timing-function: ease;
+  background-color: #ffd6d6;
+}
+.form-line-error .form-error-message {
+  background-color: #f23a3c;
+  clear: both;
+  float: none;
+}
+.form-line-error .form-error-message .form-error-arrow {
+  border-bottom-color: #f23a3c;
+}
+.form-line-error input:not(#coupon-input),
+.form-line-error textarea,
+.form-line-error .form-validation-error {
+  border: 1px solid #f23a3c;
+  box-shadow: 0 0 3px #f23a3c;
+}
+.form-line-error {
+  -webkit-transition-property: none;
+  -moz-transition-property: none;
+  -ms-transition-property: none;
+  -o-transition-property: none;
+  transition-property: none;
+  -webkit-transition-duration: 0.3s;
+  -moz-transition-duration: 0.3s;
+  -ms-transition-duration: 0.3s;
+  -o-transition-duration: 0.3s;
+  transition-duration: 0.3s;
+  -webkit-transition-timing-function: ease;
+  -moz-transition-timing-function: ease;
+  -ms-transition-timing-function: ease;
+  -o-transition-timing-function: ease;
+  transition-timing-function: ease;
+  background-color: #ffd6d6;
+}
+.form-header-group .form-header,
+.form-header-group .form-subHeader {
+  color: #12458c;
+}
+.form-line-active {
+  background-color: #f1f5ff;
+}
+/* 29 - FORM COLUMNS */
+
+/*PREFERENCES STYLE*/
+    .form-all {
+      font-family: Inter, sans-serif;
+    }
+  
+    .form-label.form-label-auto {
+      
+    display: inline-block;
+    float: left;
+    text-align: left;
+  
+    }
+  
+    .form-line {
+      margin-top: 0px;
+      margin-bottom: 0px;
+    }
+  
+    .form-all {
+      max-width: 1200px;
+      width: 100%;
+    }
+  
+    .form-label.form-label-left,
+    .form-label.form-label-right,
+    .form-label.form-label-left.form-label-auto,
+    .form-label.form-label-right.form-label-auto {
+      width: 230px;
+    }
+  
+    .form-all {
+      font-size: 16px
+    }
+  
+  .supernova {
+    background: #2461b7;
+  }
+  .supernova body {
+    background: transparent;
+  }
+  
+    .supernova .form-all, .form-all {
+      background-color: #d6e7ff;
+    }
+  
+    .form-all {
+      color: #12458c;
+    }
+    .form-header-group .form-header {
+      color: #12458c;
+    }
+    .form-header-group .form-subHeader {
+      color: #12458c;
+    }
+    .form-label-top,
+    .form-label-left,
+    .form-label-right,
+    .form-html,
+    .form-checkbox-item label,
+    .form-radio-item label,
+    span.FITB .qb-checkbox-label,
+    span.FITB .qb-radiobox-label,
+    span.FITB .form-radio label,
+    span.FITB .form-checkbox label,
+    [data-blotid][data-type=checkbox] [data-labelid],
+    [data-blotid][data-type=radiobox] [data-labelid],
+    span.FITB-inptCont[data-type=checkbox] label,
+    span.FITB-inptCont[data-type=radiobox] label {
+      color: #12458c;
+    }
+    .form-sub-label {
+      color: #2c5fa6;
+    }
+  
+    .form-textbox,
+    .form-textarea,
+    .form-dropdown,
+    .form-radio-other-input,
+    .form-checkbox-other-input,
+    .form-captcha input,
+    .form-spinner input {
+      background-color: #ffffff;
+    }
+  
+    .form-line-error {
+      overflow: hidden;
+      transition: none;
+      background-color: #ffd6d6;
+    }
+
+    .form-line-error .form-error-message {
+      background-color: #DC2626;
+      clear: both;
+      float: none;
+    }
+
+    .form-line-error .form-error-arrow {
+      border-bottom-color: #FF3200;
+    }
+
+    .form-line-error input:not(#coupon-input),
+    .form-line-error textarea,
+    .form-line-error .form-validation-error {
+      border: 1px solid #c61515;
+      box-shadow: 0 0 3px #c61515;
+    }
+   
+      
+    .supernova {
+      background-repeat: repeat;
+      background-size:cover;
+      background-attachment: fixed;
+      background-position: center top;
+    }
+
+      .supernova {
+        background-image: none;
+      }
+    
+      .form-all {
+        background-image: none;
+      }
+    /*PREFERENCES STYLE*//*__INSPECT_SEPERATOR__*/
+.form-label.form-label-auto {
+        
+        display: inline-block;
+        float: left;
+        text-align: left;
+      
+      }
+    /* Injected CSS Code */
+</style>
+
+<form class="jotform-form" onsubmit="return typeof testSubmitFunction !== 'undefined' && testSubmitFunction();" action="https://submit.jotform.com/submit/260445478825062" method="post" enctype="multipart/form-data" name="form_260445478825062" id="260445478825062" accept-charset="utf-8" autocomplete="on"><input type="hidden" name="formID" value="260445478825062" /><input type="hidden" id="JWTContainer" value="" /><input type="hidden" id="cardinalOrderNumber" value="" /><input type="hidden" id="jsExecutionTracker" name="jsExecutionTracker" value="build-date-1786551235519" /><input type="hidden" id="submitSource" name="submitSource" value="unknown" /><input type="hidden" id="submitDate" name="submitDate" value="undefined" /><input type="hidden" id="buildDate" name="buildDate" value="1786551235520" /><input type="hidden" name="uploadServerUrl" value="https://upload.jotform.com/upload" /><input type="hidden" name="eventObserver" value="1" />
+  <div role="main" class="form-all">
+    <ul class="form-section page-section" role="presentation">
+      <li id="cid_1" class="form-input-wide" data-type="control_head">
+        <div class="form-header-group header-default">
+          <div class="header-text httac htvam">
+            <h2 id="header_1" class="form-header" data-component="header">ORDEN DE TRABAJO</h2>
+          </div>
+        </div>
+      </li>
+      <li class="form-line" data-type="control_text" id="id_3">
+        <div id="cid_3" class="form-input-wide" data-layout="full">
+          <div id="text_3" class="form-html" data-component="text" tabindex="-1">FECHA DE SERVICIO</div>
+        </div>
+      </li>
+      <li class="form-line jf-required allowTime" data-type="control_datetime" id="id_62"><span class="form-label form-label-left" id="label_62"> Fecha de Inicio:<span class="form-required" aria-hidden="true">*</span> </span>
+        <div id="cid_62" class="form-input jf-required" data-layout="full">
+          <div data-wrapper-react="true" class="extended" role="group" aria-labelledby="label_62">
+            <div style="display:none"><span class="form-sub-label-container" style="vertical-align:top"><input class="currentDate form-textbox validate[required, limitDate]" id="day_62" name="q62_fechaDe62[day]" type="tel" size="2" data-maxlength="2" data-age="" maxLength="2" required="" autoComplete="off" aria-labelledby="label_62 sublabel_62_day" value="12" /><span class="date-separate" aria-hidden="true"> /</span><label class="form-sub-label" for="day_62" id="sublabel_62_day" style="min-height:13px">Día</label></span><span class="form-sub-label-container" style="vertical-align:top"><input class="form-textbox validate[required, limitDate]" id="month_62" name="q62_fechaDe62[month]" type="tel" size="2" data-maxlength="2" data-age="" maxLength="2" required="" autoComplete="off" aria-labelledby="label_62 sublabel_62_month" value="08" /><span class="date-separate" aria-hidden="true"> /</span><label class="form-sub-label" for="month_62" id="sublabel_62_month" style="min-height:13px">Mes</label></span><span class="form-sub-label-container" style="vertical-align:top"><input class="form-textbox validate[required, limitDate]" id="year_62" name="q62_fechaDe62[year]" type="tel" size="4" data-maxlength="4" data-age="" maxLength="4" required="" autoComplete="off" aria-labelledby="label_62 sublabel_62_year" value="2026" /><label class="form-sub-label" for="year_62" id="sublabel_62_year" style="min-height:13px">Año</label></span></div><span class="form-sub-label-container" style="vertical-align:top"><input class="form-textbox validate[required, limitDate, validateLiteDate]" id="lite_mode_62" type="text" size="12" data-maxlength="12" maxLength="12" data-age="" aria-labelledby="label_62 sublabel_62_litemode" required="" data-format="ddmmyyyy" data-seperator="/" placeholder="DD/MM/YYYY" data-placeholder="DD/MM/YYYY" autoComplete="off" value="12/08/2026" /><button type="button" class="showAutoCalendar newDefaultTheme-dateIcon focusable icon-liteMode" id="input_62_pick" data-component="datetime" aria-label="Choose date" aria-controls="calendar_62" aria-haspopup="dialog" aria-expanded="false" data-allow-time="Yes" data-version="v2"></button><label class="form-sub-label" for="lite_mode_62" id="sublabel_62_litemode" style="min-height:13px">Fecha</label></span><span class="allowTime-container">
+              <div data-wrapper-react="true"><span class="form-sub-label-container" style="vertical-align:top"><input class="currentTime time-dropdown form-textbox validate[required, time]" id="input_62_timeInput" name="q62_fechaDe62[timeInput]" type="text" required="" placeholder="HH : MM" data-mask="HH:MM" autoComplete="off" data-version="v2" value="12:13" /><input type="hidden" class="form-hidden-time" id="input_62_hourSelect" name="q62_fechaDe62[hour]" value="12" /><input type="hidden" class="form-hidden-time" id="input_62_minuteSelect" name="q62_fechaDe62[min]" value="13" /><label data-seperate-translate="true" class="form-sub-label" for="input_62_timeInput" id="sublabel_62_hour" style="min-height:13px">Hora Minutos</label></span></div>
+            </span>
+          </div>
+        </div>
+      </li>
+      <li class="form-line jf-required allowTime" data-type="control_datetime" id="id_63"><span class="form-label form-label-left form-label-auto" id="label_63"> Fecha de Fin:<span class="form-required" aria-hidden="true">*</span> </span>
+        <div id="cid_63" class="form-input jf-required" data-layout="full">
+          <div data-wrapper-react="true" class="extended" role="group" aria-labelledby="label_63">
+            <div style="display:none"><span class="form-sub-label-container" style="vertical-align:top"><input class="currentDate form-textbox validate[required, limitDate]" id="day_63" name="q63_fechaDe63[day]" type="tel" size="2" data-maxlength="2" data-age="" maxLength="2" required="" autoComplete="off" aria-labelledby="label_63 sublabel_63_day" value="12" /><span class="date-separate" aria-hidden="true"> /</span><label class="form-sub-label" for="day_63" id="sublabel_63_day" style="min-height:13px">Día</label></span><span class="form-sub-label-container" style="vertical-align:top"><input class="form-textbox validate[required, limitDate]" id="month_63" name="q63_fechaDe63[month]" type="tel" size="2" data-maxlength="2" data-age="" maxLength="2" required="" autoComplete="off" aria-labelledby="label_63 sublabel_63_month" value="08" /><span class="date-separate" aria-hidden="true"> /</span><label class="form-sub-label" for="month_63" id="sublabel_63_month" style="min-height:13px">Mes</label></span><span class="form-sub-label-container" style="vertical-align:top"><input class="form-textbox validate[required, limitDate]" id="year_63" name="q63_fechaDe63[year]" type="tel" size="4" data-maxlength="4" data-age="" maxLength="4" required="" autoComplete="off" aria-labelledby="label_63 sublabel_63_year" value="2026" /><label class="form-sub-label" for="year_63" id="sublabel_63_year" style="min-height:13px">Año</label></span></div><span class="form-sub-label-container" style="vertical-align:top"><input class="form-textbox validate[required, limitDate, validateLiteDate]" id="lite_mode_63" type="text" size="12" data-maxlength="12" maxLength="12" data-age="" aria-labelledby="label_63 sublabel_63_litemode" required="" data-format="ddmmyyyy" data-seperator="/" placeholder="DD/MM/YYYY" data-placeholder="DD/MM/YYYY" autoComplete="off" value="12/08/2026" /><button type="button" class="showAutoCalendar newDefaultTheme-dateIcon focusable icon-liteMode" id="input_63_pick" data-component="datetime" aria-label="Choose date" aria-controls="calendar_63" aria-haspopup="dialog" aria-expanded="false" data-allow-time="Yes" data-version="v2"></button><label class="form-sub-label" for="lite_mode_63" id="sublabel_63_litemode" style="min-height:13px">Fecha</label></span><span class="allowTime-container">
+              <div data-wrapper-react="true"><span class="form-sub-label-container" style="vertical-align:top"><input class="currentTime time-dropdown form-textbox validate[required, time]" id="input_63_timeInput" name="q63_fechaDe63[timeInput]" type="text" required="" placeholder="HH : MM" data-mask="HH:MM" autoComplete="off" data-version="v2" value="12:13" /><input type="hidden" class="form-hidden-time" id="input_63_hourSelect" name="q63_fechaDe63[hour]" value="12" /><input type="hidden" class="form-hidden-time" id="input_63_minuteSelect" name="q63_fechaDe63[min]" value="13" /><label data-seperate-translate="true" class="form-sub-label" for="input_63_timeInput" id="sublabel_63_hour" style="min-height:13px">Hora Minutos</label></span></div>
+            </span>
+          </div>
+        </div>
+      </li>
+      <li id="cid_8" class="form-input-wide" data-type="control_head">
+        <div class="form-header-group header-small">
+          <div class="header-text httac htvam">
+            <h3 id="header_8" class="form-header" data-component="header">UNIDAD MÉDICA</h3>
+          </div>
+        </div>
+      </li>
+      <li class="form-line jf-required" data-type="control_textbox" id="id_10"><label class="form-label form-label-left form-label-auto" id="label_10" for="input_10"> UNIDAD:<span class="form-required" aria-hidden="true">*</span> </label>
+        <div id="cid_10" class="form-input jf-required" data-layout="half"> <input type="text" id="input_10" name="q10_unidad" data-type="input-textbox" class="form-textbox validate[required, Alphabetic]" data-defaultvalue="" style="width:20px" size="20" placeholder="Nombre del la Unidad Médica" data-component="textbox" aria-labelledby="label_10" required="" value="" /> </div>
+      </li>
+      <li class="form-line jf-required" data-type="control_textbox" id="id_14"><label class="form-label form-label-left form-label-auto" id="label_14" for="input_14"> DOMICILIO:<span class="form-required" aria-hidden="true">*</span> </label>
+        <div id="cid_14" class="form-input jf-required" data-layout="half"> <input type="text" id="input_14" name="q14_domicilio" data-type="input-textbox" class="form-textbox validate[required]" data-defaultvalue="" style="width:20px" size="20" placeholder="Domicilio de la Unidad Médica" data-component="textbox" aria-labelledby="label_14" required="" value="" /> </div>
+      </li>
+      <li class="form-line jf-required" data-type="control_phone" id="id_64"><label class="form-label form-label-left form-label-auto" id="label_64" for="input_64_full"> TELÉFONO:<span class="form-required" aria-hidden="true">*</span> </label>
+        <div id="cid_64" class="form-input jf-required" data-layout="half"> <span class="form-sub-label-container" style="vertical-align:top"><input type="tel" id="input_64_full" name="q64_telefono[full]" data-type="mask-number" class="mask-phone-number form-textbox validate[required, Fill Mask]" data-defaultvalue="" autoComplete="section-input_64 tel-national" style="width:310px" data-masked="true" placeholder="(000) 000-0000" data-component="phone" aria-label="TELÉFONO:" aria-labelledby="label_64 sublabel_64_masked input_64_full_label" required="" value="" /><label class="form-sub-label" for="input_64_full" id="sublabel_64_masked" style="min-height:13px">Favor ingrese un número de teléfono válido.</label></span><span id="input_64_full_label" style="border:0;clip:rect(0 0 0 0);height:1px;margin:-1px;overflow:hidden;padding:0;position:absolute;width:1px;white-space:nowrap">Format: (000) 000-0000.</span> </div>
+      </li>
+      <li class="form-line jf-required" data-type="control_dropdown" id="id_66"><label class="form-label form-label-left form-label-auto" id="label_66" for="input_66"> ENTIDAD:<span class="form-required" aria-hidden="true">*</span> </label>
+        <div id="cid_66" class="form-input jf-required" data-layout="half"> <select class="form-dropdown validate[required]" id="input_66" name="q66_entidad" style="width:310px" data-component="dropdown" required="" aria-label="ENTIDAD:">
+            <option value="">Seleccione</option>
+            <option value="Aguascalientes">Aguascalientes</option>
+            <option value="Baja California">Baja California</option>
+            <option value="Baja California Sur">Baja California Sur</option>
+            <option value="Campeche">Campeche</option>
+            <option value="Chiapas">Chiapas</option>
+            <option value="Chihuahua">Chihuahua</option>
+            <option value="Ciudad de México" selected="">Ciudad de México</option>
+            <option value="Coahuila">Coahuila</option>
+            <option value="Colima">Colima</option>
+            <option value="Durango">Durango</option>
+            <option value="Estado de México">Estado de México</option>
+            <option value="Guanajuato">Guanajuato</option>
+            <option value="Guerrero">Guerrero</option>
+            <option value="Hidalgo">Hidalgo</option>
+            <option value="Jalisco">Jalisco</option>
+            <option value="Michoacán">Michoacán</option>
+            <option value="Morelos">Morelos</option>
+            <option value="Nayarit">Nayarit</option>
+            <option value="Nuevo León">Nuevo León</option>
+            <option value="Oaxaca">Oaxaca</option>
+            <option value="Puebla">Puebla</option>
+            <option value="Querétaro">Querétaro</option>
+            <option value="Quintana Roo">Quintana Roo</option>
+            <option value="San Luis Potosí">San Luis Potosí</option>
+            <option value="Sinaloa">Sinaloa</option>
+            <option value="Sonora">Sonora</option>
+            <option value="Tabasco">Tabasco</option>
+            <option value="Tamaulipas">Tamaulipas</option>
+            <option value="Tlaxcala">Tlaxcala</option>
+            <option value="Veracruz">Veracruz</option>
+            <option value="Yucatán">Yucatán</option>
+            <option value="Zacatecas">Zacatecas</option>
+          </select> </div>
+      </li>
+      <li class="form-line jf-required" data-type="control_email" id="id_65"><label class="form-label form-label-left form-label-auto" id="label_65" for="input_65"> EMAIL<span class="form-required" aria-hidden="true">*</span> </label>
+        <div id="cid_65" class="form-input jf-required" data-layout="half"> <span class="form-sub-label-container" style="vertical-align:top"><input type="email" id="input_65" name="q65_email" class="form-textbox validate[required, Email]" data-defaultvalue="" autoComplete="section-input_65 email" style="width:310px" size="310" placeholder="ejemplo@ejemplo.com" data-component="email" aria-labelledby="label_65 sublabel_input_65" required="" value="" /><label class="form-sub-label" for="input_65" id="sublabel_input_65" style="min-height:13px">Ingrese una dirección de correo valida</label></span> </div>
+      </li>
+      <li id="cid_9" class="form-input-wide" data-type="control_head">
+        <div class="form-header-group header-small">
+          <div class="header-text httac htvam">
+            <h3 id="header_9" class="form-header" data-component="header">DATOS DEL EQUIPO</h3>
+          </div>
+        </div>
+      </li>
+      <li class="form-line jf-required" data-type="control_textbox" id="id_11"><label class="form-label form-label-left form-label-auto" id="label_11" for="input_11"> EQUIPO:<span class="form-required" aria-hidden="true">*</span> </label>
+        <div id="cid_11" class="form-input jf-required" data-layout="half"> <input type="text" id="input_11" name="q11_equipo" data-type="input-textbox" class="form-textbox validate[required]" data-defaultvalue="" style="width:20px" size="20" placeholder="Nombre del Equipo" data-component="textbox" aria-labelledby="label_11" required="" value="" /> </div>
+      </li>
+      <li class="form-line jf-required" data-type="control_textbox" id="id_12"><label class="form-label form-label-left form-label-auto" id="label_12" for="input_12"> MARCA:<span class="form-required" aria-hidden="true">*</span> </label>
+        <div id="cid_12" class="form-input jf-required" data-layout="half"> <input type="text" id="input_12" name="q12_marca" data-type="input-textbox" class="form-textbox validate[required]" data-defaultvalue="" style="width:20px" size="20" placeholder="Marca del Equipo" data-component="textbox" aria-labelledby="label_12" required="" value="" /> </div>
+      </li>
+      <li class="form-line jf-required" data-type="control_textbox" id="id_13"><label class="form-label form-label-left form-label-auto" id="label_13" for="input_13"> MODELO:<span class="form-required" aria-hidden="true">*</span> </label>
+        <div id="cid_13" class="form-input jf-required" data-layout="half"> <input type="text" id="input_13" name="q13_modelo" data-type="input-textbox" class="form-textbox validate[required]" data-defaultvalue="" style="width:20px" size="20" placeholder="Modelo del Equipo" data-component="textbox" aria-labelledby="label_13" required="" value="" /> </div>
+      </li>
+      <li class="form-line jf-required" data-type="control_textbox" id="id_15"><label class="form-label form-label-left form-label-auto" id="label_15" for="input_15"> SERIE:<span class="form-required" aria-hidden="true">*</span> </label>
+        <div id="cid_15" class="form-input jf-required" data-layout="half"> <input type="text" id="input_15" name="q15_serie" data-type="input-textbox" class="form-textbox validate[required]" data-defaultvalue="" style="width:20px" size="20" placeholder="Serie del equipo" data-component="textbox" aria-labelledby="label_15" required="" value="" /> </div>
+      </li>
+      <li class="form-line jf-required" data-type="control_textbox" id="id_16"><label class="form-label form-label-left form-label-auto" id="label_16" for="input_16"> INVENTARIO:<span class="form-required" aria-hidden="true">*</span> </label>
+        <div id="cid_16" class="form-input jf-required" data-layout="half"> <input type="text" id="input_16" name="q16_inventario" data-type="input-textbox" class="form-textbox validate[required]" data-defaultvalue="" style="width:20px" size="20" placeholder="Numero de Inventario del Equipo" data-component="textbox" aria-labelledby="label_16" required="" value="" /> </div>
+      </li>
+      <li class="form-line jf-required" data-type="control_textbox" id="id_19"><label class="form-label form-label-left form-label-auto" id="label_19" for="input_19"> ÁREA O UBICACIÓN:<span class="form-required" aria-hidden="true">*</span> </label>
+        <div id="cid_19" class="form-input jf-required" data-layout="half"> <input type="text" id="input_19" name="q19_reao" data-type="input-textbox" class="form-textbox validate[required]" data-defaultvalue="" style="width:20px" size="20" placeholder="Área o Ubicación del Equipo" data-component="textbox" aria-labelledby="label_19" required="" value="" /> </div>
+      </li>
+      <li class="form-line" data-type="control_divider" id="id_67">
+        <div id="cid_67" class="form-input-wide" data-layout="full">
+          <div class="divider" data-component="divider" style="border-bottom-width:1px;border-bottom-style:solid;border-color:#2461b7;height:1px;margin-left:0px;margin-right:0px;margin-top:5px;margin-bottom:5px"></div>
+        </div>
+      </li>
+      <li class="form-line" data-type="control_checkbox" id="id_20"><span class="form-label form-label-left form-label-auto" id="label_20"> TIPO DE SERVICIO O MANTENIMIENTO </span>
+        <div id="cid_20" class="form-input" data-layout="full">
+          <div class="form-multiple-column" data-columncount="3" role="group" aria-labelledby="label_20" data-component="checkbox"><span class="form-checkbox-item"><span class="dragger-item"></span><input type="checkbox" class="form-checkbox" id="input_20_0" name="q20_tipode[]" aria-labelledby="label_input_20_0" value="PREVENTIVO" /><label aria-hidden="true" id="label_input_20_0" for="input_20_0">PREVENTIVO</label></span><span class="form-checkbox-item"><span class="dragger-item"></span><input type="checkbox" class="form-checkbox" id="input_20_1" name="q20_tipode[]" aria-labelledby="label_input_20_1" value="CORRECTIVO" /><label aria-hidden="true" id="label_input_20_1" for="input_20_1">CORRECTIVO</label></span><span class="form-checkbox-item"><span class="dragger-item"></span><input type="checkbox" class="form-checkbox" id="input_20_2" name="q20_tipode[]" aria-labelledby="label_input_20_2" value="EVALUACIÓN" /><label aria-hidden="true" id="label_input_20_2" for="input_20_2">EVALUACIÓN</label></span><span class="form-checkbox-item" style="clear:left"><span class="dragger-item"></span><input type="checkbox" class="form-checkbox" id="input_20_3" name="q20_tipode[]" aria-labelledby="label_input_20_3" value="ASISTENCIA BIOMÉDICA" /><label aria-hidden="true" id="label_input_20_3" for="input_20_3">ASISTENCIA BIOMÉDICA</label></span><span class="form-checkbox-item"><span class="dragger-item"></span><input type="checkbox" class="form-checkbox" id="input_20_4" name="q20_tipode[]" aria-labelledby="label_input_20_4" value="CURSO DE CAPACITACIÓN" /><label aria-hidden="true" id="label_input_20_4" for="input_20_4">CURSO DE CAPACITACIÓN</label></span><span class="form-checkbox-item"><span class="dragger-item"></span><input type="checkbox" class="form-checkbox" id="input_20_5" name="q20_tipode[]" aria-labelledby="label_input_20_5" value="GRABADO" /><label aria-hidden="true" id="label_input_20_5" for="input_20_5">GRABADO</label></span><span class="form-checkbox-item" style="clear:left"><span class="dragger-item"></span><input type="checkbox" class="form-checkbox" id="input_20_6" name="q20_tipode[]" aria-labelledby="label_input_20_6" value="CALIBRACIÓN" /><label aria-hidden="true" id="label_input_20_6" for="input_20_6">CALIBRACIÓN</label></span><span class="form-checkbox-item"><span class="dragger-item"></span><input type="checkbox" class="form-checkbox" id="input_20_7" name="q20_tipode[]" aria-labelledby="label_input_20_7" value="ENTREGA" /><label aria-hidden="true" id="label_input_20_7" for="input_20_7">ENTREGA</label></span><span class="form-checkbox-item"><span class="dragger-item"></span><input type="checkbox" class="form-checkbox" id="input_20_8" name="q20_tipode[]" aria-labelledby="label_input_20_8" value="INSTRUMENTAL" /><label aria-hidden="true" id="label_input_20_8" for="input_20_8">INSTRUMENTAL</label></span></div>
+        </div>
+      </li>
+      <li class="form-line" data-type="control_textbox" id="id_68"><label class="form-label form-label-left form-label-auto" id="label_68" for="input_68"> OTRO: </label>
+        <div id="cid_68" class="form-input" data-layout="half"> <span class="form-sub-label-container" style="vertical-align:top"><input type="text" id="input_68" name="q68_otro" data-type="input-textbox" class="form-textbox" data-defaultvalue="" style="width:310px" size="310" data-component="textbox" aria-labelledby="label_68 sublabel_input_68" value="" /><label class="form-sub-label" for="input_68" id="sublabel_input_68" style="min-height:13px">TIPO DE SERVICIO O MANTENIMIENTO</label></span> </div>
+      </li>
+      <li class="form-line" data-type="control_checkbox" id="id_21"><span class="form-label form-label-left" id="label_21"> CLASIFICACIÓN DE LA REPARACIÓN </span>
+        <div id="cid_21" class="form-input" data-layout="full">
+          <div class="form-multiple-column" data-columncount="3" role="group" aria-labelledby="label_21" data-component="checkbox"><span class="form-checkbox-item"><span class="dragger-item"></span><input type="checkbox" class="form-checkbox" id="input_21_0" name="q21_clasificacin[]" aria-labelledby="label_input_21_0" value="REPARACIÓN ELECTRÓNICA" /><label aria-hidden="true" id="label_input_21_0" for="input_21_0">REPARACIÓN ELECTRÓNICA</label></span><span class="form-checkbox-item"><span class="dragger-item"></span><input type="checkbox" class="form-checkbox" id="input_21_1" name="q21_clasificacin[]" aria-labelledby="label_input_21_1" value="REPARACIÓN ELÉCTRICA" /><label aria-hidden="true" id="label_input_21_1" for="input_21_1">REPARACIÓN ELÉCTRICA</label></span><span class="form-checkbox-item"><span class="dragger-item"></span><input type="checkbox" class="form-checkbox" id="input_21_2" name="q21_clasificacin[]" aria-labelledby="label_input_21_2" value="REPARACIÓN MECÁNICA" /><label aria-hidden="true" id="label_input_21_2" for="input_21_2">REPARACIÓN MECÁNICA</label></span><span class="form-checkbox-item" style="clear:left"><span class="dragger-item"></span><input type="checkbox" class="form-checkbox" id="input_21_3" name="q21_clasificacin[]" aria-labelledby="label_input_21_3" value="REPARACIÓN HIDRÁULICA" /><label aria-hidden="true" id="label_input_21_3" for="input_21_3">REPARACIÓN HIDRÁULICA</label></span><span class="form-checkbox-item"><span class="dragger-item"></span><input type="checkbox" class="form-checkbox" id="input_21_4" name="q21_clasificacin[]" aria-labelledby="label_input_21_4" value="REPARACIÓN NEUMÁTICA" /><label aria-hidden="true" id="label_input_21_4" for="input_21_4">REPARACIÓN NEUMÁTICA</label></span></div>
+        </div>
+      </li>
+      <li class="form-line" data-type="control_textbox" id="id_69"><label class="form-label form-label-left form-label-auto" id="label_69" for="input_69"> OTRO: </label>
+        <div id="cid_69" class="form-input" data-layout="half"> <span class="form-sub-label-container" style="vertical-align:top"><input type="text" id="input_69" name="q69_otro69" data-type="input-textbox" class="form-textbox" data-defaultvalue="" style="width:310px" size="310" data-component="textbox" aria-labelledby="label_69 sublabel_input_69" value="" /><label class="form-sub-label" for="input_69" id="sublabel_input_69" style="min-height:13px">CLASIFICACIÓN DE LA REPARACIÓN</label></span> </div>
+      </li>
+      <li class="form-line" data-type="control_checkbox" id="id_22"><span class="form-label form-label-left form-label-auto" id="label_22"> EQUIPO DE MEDICIÓN Y/O SIMULADOR UTILIZADO </span>
+        <div id="cid_22" class="form-input" data-layout="full">
+          <div class="form-multiple-column" data-columncount="3" role="group" aria-labelledby="label_22" data-component="checkbox"><span class="form-checkbox-item"><span class="dragger-item"></span><input type="checkbox" class="form-checkbox" id="input_22_0" name="q22_equipode[]" aria-labelledby="label_input_22_0" value="ANÁLISIS EMA" /><label aria-hidden="true" id="label_input_22_0" for="input_22_0">ANÁLISIS EMA</label></span><span class="form-checkbox-item"><span class="dragger-item"></span><input type="checkbox" class="form-checkbox" id="input_22_1" name="q22_equipode[]" aria-labelledby="label_input_22_1" value="RADIÓMETRO" /><label aria-hidden="true" id="label_input_22_1" for="input_22_1">RADIÓMETRO</label></span><span class="form-checkbox-item"><span class="dragger-item"></span><input type="checkbox" class="form-checkbox" id="input_22_2" name="q22_equipode[]" aria-labelledby="label_input_22_2" value="TACÓMETRO" /><label aria-hidden="true" id="label_input_22_2" for="input_22_2">TACÓMETRO</label></span><span class="form-checkbox-item" style="clear:left"><span class="dragger-item"></span><input type="checkbox" class="form-checkbox" id="input_22_3" name="q22_equipode[]" aria-labelledby="label_input_22_3" value="ELECTROCAUTERIO" /><label aria-hidden="true" id="label_input_22_3" for="input_22_3">ELECTROCAUTERIO</label></span><span class="form-checkbox-item"><span class="dragger-item"></span><input type="checkbox" class="form-checkbox" id="input_22_4" name="q22_equipode[]" aria-labelledby="label_input_22_4" value="SEGURIDAD ELÉCTRICA" /><label aria-hidden="true" id="label_input_22_4" for="input_22_4">SEGURIDAD ELÉCTRICA</label></span><span class="form-checkbox-item"><span class="dragger-item"></span><input type="checkbox" class="form-checkbox" id="input_22_5" name="q22_equipode[]" aria-labelledby="label_input_22_5" value="SIGNOS VITALES (PANI, IBP, ECG, SPO2, TEMPERATURA)" /><label aria-hidden="true" id="label_input_22_5" for="input_22_5">SIGNOS VITALES (PANI, IBP, ECG, SPO2, TEMPERATURA)</label></span><span class="form-checkbox-item" style="clear:left"><span class="dragger-item"></span><input type="checkbox" class="form-checkbox" id="input_22_6" name="q22_equipode[]" aria-labelledby="label_input_22_6" value="DESFIBRILADOR" /><label aria-hidden="true" id="label_input_22_6" for="input_22_6">DESFIBRILADOR</label></span><span class="form-checkbox-item"><span class="dragger-item"></span><input type="checkbox" class="form-checkbox" id="input_22_7" name="q22_equipode[]" aria-labelledby="label_input_22_7" value="FLUJO Y VOLUMEN" /><label aria-hidden="true" id="label_input_22_7" for="input_22_7">FLUJO Y VOLUMEN</label></span><span class="form-checkbox-item"><span class="dragger-item"></span><input type="checkbox" class="form-checkbox" id="input_22_8" name="q22_equipode[]" aria-labelledby="label_input_22_8" value="INCUBADORA (	C, Hr, db, Lux, Caudal aire)" /><label aria-hidden="true" id="label_input_22_8" for="input_22_8">INCUBADORA ( C, Hr, db, Lux, Caudal aire)</label></span><span class="form-checkbox-item" style="clear:left"><span class="dragger-item"></span><input type="checkbox" class="form-checkbox" id="input_22_9" name="q22_equipode[]" aria-labelledby="label_input_22_9" value="MARCAPASOS" /><label aria-hidden="true" id="label_input_22_9" for="input_22_9">MARCAPASOS</label></span><span class="form-checkbox-item"><span class="dragger-item"></span><input type="checkbox" class="form-checkbox" id="input_22_10" name="q22_equipode[]" aria-labelledby="label_input_22_10" value="PESAS" /><label aria-hidden="true" id="label_input_22_10" for="input_22_10">PESAS</label></span><span class="form-checkbox-item"><span class="dragger-item"></span><input type="checkbox" class="form-checkbox" id="input_22_11" name="q22_equipode[]" aria-labelledby="label_input_22_11" value="GASES" /><label aria-hidden="true" id="label_input_22_11" for="input_22_11">GASES</label></span><span class="form-checkbox-item" style="clear:left"><span class="dragger-item"></span><input type="checkbox" class="form-checkbox" id="input_22_12" name="q22_equipode[]" aria-labelledby="label_input_22_12" value="VERNIER" /><label aria-hidden="true" id="label_input_22_12" for="input_22_12">VERNIER</label></span></div>
+        </div>
+      </li>
+      <li class="form-line" data-type="control_textbox" id="id_70"><label class="form-label form-label-left form-label-auto" id="label_70" for="input_70"> OTRO: </label>
+        <div id="cid_70" class="form-input" data-layout="half"> <span class="form-sub-label-container" style="vertical-align:top"><input type="text" id="input_70" name="q70_otro70" data-type="input-textbox" class="form-textbox" data-defaultvalue="" style="width:310px" size="310" data-component="textbox" aria-labelledby="label_70 sublabel_input_70" value="" /><label class="form-sub-label" for="input_70" id="sublabel_input_70" style="min-height:13px">EQUIPO DE MEDICIÓN Y/O SIMULADOR UTILIZADO</label></span> </div>
+      </li>
+      <li class="form-line" data-type="control_checkbox" id="id_23"><span class="form-label form-label-left form-label-auto" id="label_23"> DATOS DEL EQUIPO DE CALIBRACIÓN </span>
+        <div id="cid_23" class="form-input" data-layout="full">
+          <div class="form-multiple-column" data-columncount="3" role="group" aria-labelledby="label_23" data-component="checkbox"><span class="form-checkbox-item"><span class="dragger-item"></span><input type="checkbox" class="form-checkbox" id="input_23_0" name="q23_datosdel23[]" aria-labelledby="label_input_23_0" value="SEG. ELEC. ESA 612 ns: 3595053" /><label aria-hidden="true" id="label_input_23_0" for="input_23_0">SEG. ELEC. ESA 612 ns: 3595053</label></span><span class="form-checkbox-item"><span class="dragger-item"></span><input type="checkbox" class="form-checkbox" id="input_23_1" name="q23_datosdel23[]" aria-labelledby="label_input_23_1" value="FLUKE PROSIM8 ns: 3737639." /><label aria-hidden="true" id="label_input_23_1" for="input_23_1">FLUKE PROSIM8 ns: 3737639.</label></span><span class="form-checkbox-item"><span class="dragger-item"></span><input type="checkbox" class="form-checkbox" id="input_23_2" name="q23_datosdel23[]" aria-labelledby="label_input_23_2" value="REMEX PARALELEPÍPEDA 10 Kg." /><label aria-hidden="true" id="label_input_23_2" for="input_23_2">REMEX PARALELEPÍPEDA 10 Kg.</label></span><span class="form-checkbox-item" style="clear:left"><span class="dragger-item"></span><input type="checkbox" class="form-checkbox" id="input_23_3" name="q23_datosdel23[]" aria-labelledby="label_input_23_3" value="FLUKE VT305 ns: BF100750" /><label aria-hidden="true" id="label_input_23_3" for="input_23_3">FLUKE VT305 ns: BF100750</label></span><span class="form-checkbox-item"><span class="dragger-item"></span><input type="checkbox" class="form-checkbox" id="input_23_4" name="q23_datosdel23[]" aria-labelledby="label_input_23_4" value="FLUKE SPOT LIGHT ns: 3562069" /><label aria-hidden="true" id="label_input_23_4" for="input_23_4">FLUKE SPOT LIGHT ns: 3562069</label></span><span class="form-checkbox-item"><span class="dragger-item"></span><input type="checkbox" class="form-checkbox" id="input_23_5" name="q23_datosdel23[]" aria-labelledby="label_input_23_5" value="REMEX PARALELEPÍPEDA 5 Kg." /><label aria-hidden="true" id="label_input_23_5" for="input_23_5">REMEX PARALELEPÍPEDA 5 Kg.</label></span><span class="form-checkbox-item" style="clear:left"><span class="dragger-item"></span><input type="checkbox" class="form-checkbox" id="input_23_6" name="q23_datosdel23[]" aria-labelledby="label_input_23_6" value="FLUKE IMPULSE 7000 DP ns: 4430700" /><label aria-hidden="true" id="label_input_23_6" for="input_23_6">FLUKE IMPULSE 7000 DP ns: 4430700</label></span><span class="form-checkbox-item"><span class="dragger-item"></span><input type="checkbox" class="form-checkbox" id="input_23_7" name="q23_datosdel23[]" aria-labelledby="label_input_23_7" value="LT LUTRON LM-8102 ns: AG-16162" /><label aria-hidden="true" id="label_input_23_7" for="input_23_7">LT LUTRON LM-8102 ns: AG-16162</label></span><span class="form-checkbox-item"><span class="dragger-item"></span><input type="checkbox" class="form-checkbox" id="input_23_8" name="q23_datosdel23[]" aria-labelledby="label_input_23_8" value="RIKEN KEIKI FI-2l ns: 378040019 ES" /><label aria-hidden="true" id="label_input_23_8" for="input_23_8">RIKEN KEIKI FI-2l ns: 378040019 ES</label></span><span class="form-checkbox-item" style="clear:left"><span class="dragger-item"></span><input type="checkbox" class="form-checkbox" id="input_23_9" name="q23_datosdel23[]" aria-labelledby="label_input_23_9" value="TACHO METER 8000 ns: 956428" /><label aria-hidden="true" id="label_input_23_9" for="input_23_9">TACHO METER 8000 ns: 956428</label></span><span class="form-checkbox-item"><span class="dragger-item"></span><input type="checkbox" class="form-checkbox" id="input_23_10" name="q23_datosdel23[]" aria-labelledby="label_input_23_10" value="DNI NEVADA 454A ESA ns:2468" /><label aria-hidden="true" id="label_input_23_10" for="input_23_10">DNI NEVADA 454A ESA ns:2468</label></span><span class="form-checkbox-item"><span class="dragger-item"></span><input type="checkbox" class="form-checkbox" id="input_23_11" name="q23_datosdel23[]" aria-labelledby="label_input_23_11" value="TES 1333 RADIÓMETRO ns: 070508925" /><label aria-hidden="true" id="label_input_23_11" for="input_23_11">TES 1333 RADIÓMETRO ns: 070508925</label></span></div>
+        </div>
+      </li>
+      <li class="form-line" data-type="control_textbox" id="id_71"><label class="form-label form-label-left form-label-auto" id="label_71" for="input_71"> OTRO: </label>
+        <div id="cid_71" class="form-input" data-layout="half"> <span class="form-sub-label-container" style="vertical-align:top"><input type="text" id="input_71" name="q71_otro71" data-type="input-textbox" class="form-textbox" data-defaultvalue="" style="width:310px" size="310" data-component="textbox" aria-labelledby="label_71 sublabel_input_71" value="" /><label class="form-sub-label" for="input_71" id="sublabel_input_71" style="min-height:13px">DATOS DEL EQUIPO DE CALIBRACIÓN</label></span> </div>
+      </li>
+      <li class="form-line" data-type="control_checkbox" id="id_24"><span class="form-label form-label-left form-label-auto" id="label_24"> DOCUMENTACIÓN GENERADA Y ANEXADA: </span>
+        <div id="cid_24" class="form-input" data-layout="full">
+          <div class="form-multiple-column" data-columncount="2" role="group" aria-labelledby="label_24" data-component="checkbox"><span class="form-checkbox-item"><span class="dragger-item"></span><input type="checkbox" class="form-checkbox" id="input_24_0" name="q24_resultadode[]" aria-labelledby="label_input_24_0" value="RUTINA DE MANTENIMIENTO" /><label aria-hidden="true" id="label_input_24_0" for="input_24_0">RUTINA DE MANTENIMIENTO</label></span><span class="form-checkbox-item"><span class="dragger-item"></span><input type="checkbox" class="form-checkbox" id="input_24_1" name="q24_resultadode[]" aria-labelledby="label_input_24_1" value="RESULTADO DE CALIBRACIÓN" /><label aria-hidden="true" id="label_input_24_1" for="input_24_1">RESULTADO DE CALIBRACIÓN</label></span><span class="form-checkbox-item" style="clear:left"><span class="dragger-item"></span><input type="checkbox" class="form-checkbox" id="input_24_2" name="q24_resultadode[]" aria-labelledby="label_input_24_2" value="CERTIFICADO EMA" /><label aria-hidden="true" id="label_input_24_2" for="input_24_2">CERTIFICADO EMA</label></span></div>
+        </div>
+      </li>
+      <li class="form-line jf-required" data-type="control_dropdown" id="id_73"><label class="form-label form-label-left form-label-auto" id="label_73" for="input_73"> CERTIFICADO DE CALIBRACIÓN VIGENTE AÑO:<span class="form-required" aria-hidden="true">*</span> </label>
+        <div id="cid_73" class="form-input jf-required" data-layout="half"> <select class="form-dropdown validate[required]" id="input_73" name="q73_certificadoDe" style="width:310px" data-component="dropdown" required="" aria-label="CERTIFICADO DE CALIBRACIÓN VIGENTE AÑO:">
+            <option value="">Seleccione</option>
+            <option value="2024">2024</option>
+            <option value="2025">2025</option>
+            <option value="2026">2026</option>
+            <option value="." selected="">.</option>
+          </select> </div>
+      </li>
+      <li class="form-line" data-type="control_textbox" id="id_26"><label class="form-label form-label-left form-label-auto" id="label_26" for="input_26"> OTROS: </label>
+        <div id="cid_26" class="form-input" data-layout="half"> <span class="form-sub-label-container" style="vertical-align:top"><input type="text" id="input_26" name="q26_otros" data-type="input-textbox" class="form-textbox" data-defaultvalue="" style="width:20px" size="20" data-component="textbox" aria-labelledby="label_26 sublabel_input_26" value="" /><label class="form-sub-label" for="input_26" id="sublabel_input_26" style="min-height:13px">DOCUMENTACIÓN GENERADA Y ANEXADA:</label></span> </div>
+      </li>
+      <li id="cid_75" class="form-input-wide" data-type="control_head">
+        <div class="form-header-group header-default">
+          <div class="header-text httal htvam">
+            <h2 id="header_75" class="form-header" data-component="header">DESCRIPCIÓN DEL SERVICIO</h2>
+          </div>
+        </div>
+      </li>
+      <li class="form-line jf-required" data-type="control_checkbox" id="id_28"><span class="form-label form-label-left form-label-auto" id="label_28"> 1.- LIMPIEZA Y DESINFECCI N DEL EQUIPO CON PRUEBAS DE FUNCIONAMIENTO GENERAL<span class="form-required" aria-hidden="true">*</span> </span>
+        <div id="cid_28" class="form-input jf-required" data-layout="full">
+          <div class="form-single-column" role="group" aria-required="true" aria-labelledby="label_28" data-component="checkbox"><span class="form-checkbox-item" style="clear:left"><span class="dragger-item"></span><input type="checkbox" class="form-checkbox validate[required]" id="input_28_0" name="q28_1Limpieza[]" aria-labelledby="label_input_28_0" value="REALIZADO" /><label aria-hidden="true" id="label_input_28_0" for="input_28_0">REALIZADO</label></span><span class="form-checkbox-item" style="clear:left"><span class="dragger-item"></span><input type="checkbox" class="form-checkbox validate[required]" id="input_28_1" name="q28_1Limpieza[]" aria-labelledby="label_input_28_1" value="N\A" /><label aria-hidden="true" id="label_input_28_1" for="input_28_1">N\A</label></span></div>
+        </div>
+      </li>
+      <li class="form-line jf-required" data-type="control_checkbox" id="id_29"><span class="form-label form-label-left form-label-auto" id="label_29"> 2.- CONDICIONES ESTÉTICAS DEL EQUIPO<span class="form-required" aria-hidden="true">*</span> </span>
+        <div id="cid_29" class="form-input jf-required" data-layout="full">
+          <div class="form-multiple-column" data-columncount="2" role="group" aria-required="true" aria-labelledby="label_29" data-component="checkbox"><span class="form-checkbox-item"><span class="dragger-item"></span><input type="checkbox" class="form-checkbox validate[required]" id="input_29_0" name="q29_2condiciones[]" aria-labelledby="label_input_29_0" value="REALIZADO" /><label aria-hidden="true" id="label_input_29_0" for="input_29_0">REALIZADO</label></span><span class="form-checkbox-item"><span class="dragger-item"></span><input type="checkbox" class="form-checkbox validate[required]" id="input_29_1" name="q29_2condiciones[]" aria-labelledby="label_input_29_1" value="BUEN ESTADO" /><label aria-hidden="true" id="label_input_29_1" for="input_29_1">BUEN ESTADO</label></span><span class="form-checkbox-item" style="clear:left"><span class="dragger-item"></span><input type="checkbox" class="form-checkbox validate[required]" id="input_29_2" name="q29_2condiciones[]" aria-labelledby="label_input_29_2" value="DETALLES ESTÉTICOS" /><label aria-hidden="true" id="label_input_29_2" for="input_29_2">DETALLES ESTÉTICOS</label></span><span class="form-checkbox-item"><span class="dragger-item"></span><input type="checkbox" class="form-checkbox validate[required]" id="input_29_3" name="q29_2condiciones[]" aria-labelledby="label_input_29_3" value="N\A" /><label aria-hidden="true" id="label_input_29_3" for="input_29_3">N\A</label></span></div>
+        </div>
+      </li>
+      <li class="form-line jf-required" data-type="control_checkbox" id="id_31"><span class="form-label form-label-left form-label-auto" id="label_31"> 3.- REVISIÓN DE CONDICIONES OPERATIVAS DEL EQUIPO<span class="form-required" aria-hidden="true">*</span> </span>
+        <div id="cid_31" class="form-input jf-required" data-layout="full">
+          <div class="form-single-column" role="group" aria-required="true" aria-labelledby="label_31" data-component="checkbox"><span class="form-checkbox-item" style="clear:left"><span class="dragger-item"></span><input type="checkbox" class="form-checkbox validate[required]" id="input_31_0" name="q31_3revisi[]" aria-labelledby="label_input_31_0" value="REALIZADO" /><label aria-hidden="true" id="label_input_31_0" for="input_31_0">REALIZADO</label></span><span class="form-checkbox-item" style="clear:left"><span class="dragger-item"></span><input type="checkbox" class="form-checkbox validate[required]" id="input_31_1" name="q31_3revisi[]" aria-labelledby="label_input_31_1" value="N\A" /><label aria-hidden="true" id="label_input_31_1" for="input_31_1">N\A</label></span></div>
+        </div>
+      </li>
+      <li class="form-line jf-required" data-type="control_checkbox" id="id_155"><span class="form-label form-label-left form-label-auto" id="label_155"> 4.- REPARACIÓN DE EQUIPO<span class="form-required" aria-hidden="true">*</span> </span>
+        <div id="cid_155" class="form-input jf-required" data-layout="full">
+          <div class="form-multiple-column" data-columncount="2" role="group" aria-required="true" aria-labelledby="label_155" data-component="checkbox"><span class="form-checkbox-item"><span class="dragger-item"></span><input type="checkbox" class="form-checkbox validate[required]" id="input_155_0" name="q155_4Reparacion[]" aria-labelledby="label_input_155_0" value="SI" /><label aria-hidden="true" id="label_input_155_0" for="input_155_0">SI</label></span><span class="form-checkbox-item"><span class="dragger-item"></span><input type="checkbox" class="form-checkbox validate[required]" id="input_155_1" name="q155_4Reparacion[]" aria-labelledby="label_input_155_1" value="NO" /><label aria-hidden="true" id="label_input_155_1" for="input_155_1">NO</label></span><span class="form-checkbox-item" style="clear:left"><span class="dragger-item"></span><input type="checkbox" class="form-checkbox validate[required]" id="input_155_2" name="q155_4Reparacion[]" aria-labelledby="label_input_155_2" value="N\A" /><label aria-hidden="true" id="label_input_155_2" for="input_155_2">N\A</label></span></div>
+        </div>
+      </li>
+      <li class="form-line jf-required" data-type="control_checkbox" id="id_33"><span class="form-label form-label-left form-label-auto" id="label_33"> 5.- CAMBIO DE REFACCIONES<span class="form-required" aria-hidden="true">*</span> </span>
+        <div id="cid_33" class="form-input jf-required" data-layout="full">
+          <div class="form-multiple-column" data-columncount="2" role="group" aria-required="true" aria-labelledby="label_33" data-component="checkbox"><span class="form-checkbox-item"><span class="dragger-item"></span><input type="checkbox" class="form-checkbox validate[required]" id="input_33_0" name="q33_4cambio[]" aria-labelledby="label_input_33_0" value="SI" /><label aria-hidden="true" id="label_input_33_0" for="input_33_0">SI</label></span><span class="form-checkbox-item"><span class="dragger-item"></span><input type="checkbox" class="form-checkbox validate[required]" id="input_33_1" name="q33_4cambio[]" aria-labelledby="label_input_33_1" value="NO" /><label aria-hidden="true" id="label_input_33_1" for="input_33_1">NO</label></span><span class="form-checkbox-item" style="clear:left"><span class="dragger-item"></span><input type="checkbox" class="form-checkbox validate[required]" id="input_33_2" name="q33_4cambio[]" aria-labelledby="label_input_33_2" value="PROPORCIONADOAS POR I.A" /><label aria-hidden="true" id="label_input_33_2" for="input_33_2">PROPORCIONADOAS POR I.A</label></span><span class="form-checkbox-item"><span class="dragger-item"></span><input type="checkbox" class="form-checkbox validate[required]" id="input_33_3" name="q33_4cambio[]" aria-labelledby="label_input_33_3" value="PROPORCIONADAS POR EL CLIENTE" /><label aria-hidden="true" id="label_input_33_3" for="input_33_3">PROPORCIONADAS POR EL CLIENTE</label></span><span class="form-checkbox-item" style="clear:left"><span class="dragger-item"></span><input type="checkbox" class="form-checkbox validate[required]" id="input_33_4" name="q33_4cambio[]" aria-labelledby="label_input_33_4" value="N\A" /><label aria-hidden="true" id="label_input_33_4" for="input_33_4">N\A</label></span></div>
+        </div>
+      </li>
+      <li class="form-line jf-required" data-type="control_checkbox" id="id_36"><span class="form-label form-label-left form-label-auto" id="label_36"> 6.- OPERATIVIDAD: APTO PARA PACIENTE<span class="form-required" aria-hidden="true">*</span> </span>
+        <div id="cid_36" class="form-input jf-required" data-layout="full">
+          <div class="form-multiple-column" data-columncount="2" role="group" aria-required="true" aria-labelledby="label_36" data-component="checkbox"><span class="form-checkbox-item"><span class="dragger-item"></span><input type="checkbox" class="form-checkbox validate[required]" id="input_36_0" name="q36_5operatividad[]" aria-labelledby="label_input_36_0" value="SI" /><label aria-hidden="true" id="label_input_36_0" for="input_36_0">SI</label></span><span class="form-checkbox-item"><span class="dragger-item"></span><input type="checkbox" class="form-checkbox validate[required]" id="input_36_1" name="q36_5operatividad[]" aria-labelledby="label_input_36_1" value="NO" /><label aria-hidden="true" id="label_input_36_1" for="input_36_1">NO</label></span><span class="form-checkbox-item" style="clear:left"><span class="dragger-item"></span><input type="checkbox" class="form-checkbox validate[required]" id="input_36_2" name="q36_5operatividad[]" aria-labelledby="label_input_36_2" value="FALTAN ACCESORIOS" /><label aria-hidden="true" id="label_input_36_2" for="input_36_2">FALTAN ACCESORIOS</label></span><span class="form-checkbox-item"><span class="dragger-item"></span><input type="checkbox" class="form-checkbox validate[required]" id="input_36_3" name="q36_5operatividad[]" aria-labelledby="label_input_36_3" value="N\A" /><label aria-hidden="true" id="label_input_36_3" for="input_36_3">N\A</label></span></div>
+        </div>
+      </li>
+      <li class="form-line jf-required" data-type="control_textarea" id="id_39"><label class="form-label form-label-left form-label-auto" id="label_39" for="input_39"> DETALLE DE FUNCIONALIDAD:<span class="form-required" aria-hidden="true">*</span> </label>
+        <div id="cid_39" class="form-input jf-required" data-layout="full"> <textarea id="input_39" class="form-textarea validate[required]" name="q39_detallede" style="width:600px;height:100px" data-component="textarea" required="" aria-labelledby="label_39"></textarea> </div>
+      </li>
+      <li id="cid_76" class="form-input-wide" data-type="control_head">
+        <div class="form-header-group header-small">
+          <div class="header-text httac htvam">
+            <h3 id="header_76" class="form-header" data-component="header">ESTATUS DE SEGUIMIENTO</h3>
+          </div>
+        </div>
+      </li>
+      <li class="form-line" data-type="control_checkbox" id="id_77"><span class="form-label form-label-left form-label-auto" id="label_77"> </span>
+        <div id="cid_77" class="form-input" data-layout="full">
+          <div class="form-multiple-column" data-columncount="2" role="group" aria-labelledby="label_77" data-component="checkbox"><span class="form-checkbox-item"><span class="dragger-item"></span><input type="checkbox" class="form-checkbox" id="input_77_0" name="q77_escribaUna[]" aria-labelledby="label_input_77_0" value="GARANTÍA" /><label aria-hidden="true" id="label_input_77_0" for="input_77_0">GARANTÍA</label></span><span class="form-checkbox-item"><span class="dragger-item"></span><input type="checkbox" class="form-checkbox" id="input_77_1" name="q77_escribaUna[]" aria-labelledby="label_input_77_1" value="REQUIERE COTIZACIÓN" /><label aria-hidden="true" id="label_input_77_1" for="input_77_1">REQUIERE COTIZACIÓN</label></span><span class="form-checkbox-item" style="clear:left"><span class="dragger-item"></span><input type="checkbox" class="form-checkbox" id="input_77_2" name="q77_escribaUna[]" aria-labelledby="label_input_77_2" value="EN CONTRATO" /><label aria-hidden="true" id="label_input_77_2" for="input_77_2">EN CONTRATO</label></span><span class="form-checkbox-item"><span class="dragger-item"></span><input type="checkbox" class="form-checkbox" id="input_77_3" name="q77_escribaUna[]" aria-labelledby="label_input_77_3" value="A PRUEBA POR 8 DÍAS" /><label aria-hidden="true" id="label_input_77_3" for="input_77_3">A PRUEBA POR 8 DÍAS</label></span><span class="form-checkbox-item" style="clear:left"><span class="dragger-item"></span><input type="checkbox" class="form-checkbox" id="input_77_4" name="q77_escribaUna[]" aria-labelledby="label_input_77_4" value="FUERA DE SERVICIO" /><label aria-hidden="true" id="label_input_77_4" for="input_77_4">FUERA DE SERVICIO</label></span></div>
+        </div>
+      </li>
+      <li id="cid_38" class="form-input-wide" data-type="control_head">
+        <div class="form-header-group header-small">
+          <div class="header-text httac htvam">
+            <h3 id="header_38" class="form-header" data-component="header">TECNOVIGILANCIA</h3>
+          </div>
+        </div>
+      </li>
+      <li class="form-line" data-type="control_dropdown" id="id_104"><label class="form-label form-label-left form-label-auto" id="label_104" for="input_104"> ¿EQUIPO FALLÓ CON PACIENTE? </label>
+        <div id="cid_104" class="form-input" data-layout="half"> <select class="form-dropdown" id="input_104" name="q104_equipoFallo" style="width:310px" data-component="dropdown" aria-label="¿EQUIPO FALLÓ CON PACIENTE?">
+            <option value="">Seleccione</option>
+            <option value="Si">Si</option>
+            <option value="No">No</option>
+          </select> </div>
+      </li>
+      <li class="form-line" data-type="control_dropdown" id="id_105"><label class="form-label form-label-left form-label-auto" id="label_105" for="input_105"> ¿EQUIPO FALLÓ Y DAÑO A PACIENTE? </label>
+        <div id="cid_105" class="form-input" data-layout="half"> <select class="form-dropdown" id="input_105" name="q105_equipoFallo105" style="width:310px" data-component="dropdown" aria-label="¿EQUIPO FALLÓ Y DAÑO A PACIENTE?">
+            <option value="">Seleccione</option>
+            <option value="Si">Si</option>
+            <option value="No">No</option>
+          </select> </div>
+      </li>
+      <li class="form-line" data-type="control_widget" id="id_133"><span class="form-label form-label-left form-label-auto" id="label_133"> Valores de Medición </span>
+        <div id="cid_133" class="form-input" data-layout="full">
+          <div data-widget-name="Matrix Dinámica" style="width:100%;text-align:Left;overflow-x:auto" data-component="widget-field" role="group" aria-labelledby="label_133" aria-label="Matrix Dinámica"><iframe data-client-id="5299b58aba554b7e24000007" data-unique-id="" title="Matrix Dinámica" frameBorder="0" scrolling="no" allowtransparency="true" allow="local-network-access *; geolocation; microphone; camera; autoplay; encrypted-media; fullscreen; aria-notify" data-type="iframe" class="custom-field-frame" data-widget-slug="" id="customFieldFrame_133" src="" style="max-width:800px;border:none;width:100%;height:140px" data-width="800" data-height="140"></iframe>
+            <div class="widget-inputs-wrapper"><input id="input_133" class="form-hidden form-widget  " type="hidden" name="q133_escribaUna133" value="" /><input id="widget_settings_133" class="form-hidden form-widget-settings" type="hidden" data-version="2" value="%5B%7B%22name%22%3A%22cols%22%2C%22value%22%3A%22Medicion%3A125%2CValor%20Programado%3A125%2CValor%20Desplegado%3A125%2CValor%20Medido%3A120%22%7D%2C%7B%22name%22%3A%22headerColor%22%2C%22value%22%3A%22negro%22%7D%2C%7B%22name%22%3A%22borderColor%22%2C%22value%22%3A%22%2388d%22%7D%2C%7B%22name%22%3A%22contentColor%22%2C%22value%22%3A%22negro%22%7D%2C%7B%22name%22%3A%22addRowButtonText%22%2C%22value%22%3A%22Guarde%20y%20Agregue%20Fila%22%7D%2C%7B%22name%22%3A%22btnTheme%22%2C%22value%22%3A%22Predeterminado%22%7D%5D" /></div>
+            <script type="text/javascript">
+              document.addEventListener('JotformReady', function()
+              {
+
+                setTimeout(function()
+                {
+                  function renderWidget()
+                  {
+                    var _cFieldFrame = document.getElementById("customFieldFrame_133");
+                    if (_cFieldFrame)
+                    {
+                      _cFieldFrame.onload = function()
+                      {
+                        if (typeof widgetFrameLoaded !== 'undefined')
+                        {
+                          widgetFrameLoaded(133,
+                          {
+                            "formID": 260445478825062
+                          }, undefined,
+                          {})
+                        }
+                      };
+                      var _settingsSignature = "";
+                      if (false)
+                      {
+                        var _settingsInput = document.getElementById("widget_settings_133");
+                        var _settingsValue = _settingsInput ? _settingsInput.value : "";
+                        var _hash = 0;
+                        for (var _i = 0; _i < _settingsValue.length; _i += 1)
+                        {
+                          _hash = ((_hash << 5) - _hash) + _settingsValue.charCodeAt(_i);
+                          _hash |= 0;
+                        }
+                        _settingsSignature = "&builderWidgetSettingsHash=" + _hash;
+                      }
+                      var _nextSrc = "https://www.jotform.com/form-widgets/dyn-matrix/?qid=133&isOpenedInPortal=undefined&isOpenedInAgent=undefined&align=Left&ref=" +
+                        encodeURIComponent(window.location.protocol + "//" + window.location.host) + '' + '' + '' + '&lang=en-US' +
+                        '&injectCSS=' + encodeURIComponent(window.location.search.indexOf("ndt=1") > -1) +
+                        _settingsSignature;
+                      if (_cFieldFrame.getAttribute("data-widget-src") !== _nextSrc)
+                      {
+                        _cFieldFrame.src = _nextSrc;
+                        _cFieldFrame.setAttribute("data-widget-src", _nextSrc);
+                      }
+                      if (_cFieldFrame.addClassName)
+                      {
+                        _cFieldFrame.addClassName("custom-field-frame-rendered");
+                      }
+                      else
+                      {
+                        _cFieldFrame.classList.add("custom-field-frame-rendered");
+                      }
+                    }
+                  }
+                  if (true)
+                  {
+                    var _interval = setInterval(function()
+                    {
+                      var dataMode = document.querySelector('html').getAttribute('data-mode');
+                      if (dataMode === 'fillMode')
+                      {
+                        renderWidget()
+                        clearInterval(_interval);
+                      }
+                    }, 1000);
+                  }
+                  else
+                  {
+                    renderWidget();
+                  }
+                }, 0);
+
+              });
+            </script>
+          </div>
+        </div>
+      </li>
+      <li class="form-line" data-type="control_textarea" id="id_57"><label class="form-label form-label-left form-label-auto" id="label_57" for="input_57"> OBSERVACIONES: </label>
+        <div id="cid_57" class="form-input" data-layout="full"> <textarea id="input_57" class="form-textarea" name="q57_observaciones" style="width:600px;height:100px" data-component="textarea" aria-labelledby="label_57"></textarea> </div>
+      </li>
+      <li class="form-line" data-type="control_divider" id="id_171">
+        <div id="cid_171" class="form-input-wide" data-layout="full">
+          <div class="divider" data-component="divider" style="border-bottom-width:1px;border-bottom-style:solid;border-color:#e6e6e6;height:1px;margin-left:0px;margin-right:0px;margin-top:5px;margin-bottom:5px"></div>
+        </div>
+      </li>
+      <li id="cid_103" class="form-input-wide" data-type="control_pagebreak">
+        <div class="form-pagebreak" data-component="pagebreak">
+          <div class="form-pagebreak-back-container"><button id="form-pagebreak-back_103" type="button" class="form-pagebreak-back  jf-form-buttons" data-component="pagebreak-back">Atrás</button></div>
+          <div class="form-pagebreak-next-container"><button id="form-pagebreak-next_103" type="button" class="form-pagebreak-next  jf-form-buttons" data-component="pagebreak-next">Siguiente</button></div>
+          <div style="clear:both" class="pageInfo form-sub-label" id="pageInfo_103"></div>
+        </div>
+      </li>
+    </ul>
+    <ul class="form-section page-section" role="presentation" style="display:none;">
+      <li id="cid_42" class="form-input-wide" data-type="control_head">
+        <div class="form-header-group header-small">
+          <div class="header-text httac htvam">
+            <h3 id="header_42" class="form-header" data-component="header">INGENIERO DE SERVICIO</h3>
+          </div>
+        </div>
+      </li>
+      <li class="form-line jf-required" data-type="control_fileupload" id="id_147"><label class="form-label form-label-left form-label-auto" id="label_147" for="input_147"> Carga de archivo<span class="form-required" aria-hidden="true">*</span> </label>
+        <div id="cid_147" class="form-input jf-required" data-layout="full">
+          <div class="jfQuestion-fields" data-wrapper-react="true">
+            <div class="jfField isFilled">
+              <div class="jfUpload-wrapper">
+                <div class="jfUpload-container">
+                  <div class="jfUpload-button-container">
+                    <div class="jfUpload-button" aria-hidden="true" tabindex="0" style="display:none" data-version="v2">Buscar archivos<div class="jfUpload-heading forDesktop">Drag and drop files here</div>
+                      <div class="jfUpload-heading forMobile">Choose a file</div>
+                    </div>
+                  </div>
+                </div>
+                <div class="jfUpload-files-container">
+                  <div class="validate[multipleUpload]"><input type="file" id="input_147" name="q147_cargaDe[]" multiple="" class="form-upload-multiple validate[required]" data-imagevalidate="yes" data-file-accept="pdf, doc, docx, xls, xlsx, csv, txt, rtf, html, zip, mp3, wma, mpg, flv, avi, jpg, jpeg, png, gif" data-limit-file-size="Yes" data-file-maxsize="10854" data-file-minsize="0" data-file-limit="5" data-component="fileupload" required="" aria-label="Buscar archivos" /></div>
+                </div>
+              </div>
+              <div data-wrapper-react="true"></div>
+            </div><span style="display:none" class="cancelText">Cancel</span><span style="display:none" class="ofText">of</span>
+          </div>
+        </div>
+      </li>
+      <li class="form-line jf-required" data-type="control_dropdown" id="id_127"><label class="form-label form-label-left form-label-auto" id="label_127" for="input_127"> INGENIERO DE SERVICIO:<span class="form-required" aria-hidden="true">*</span> </label>
+        <div id="cid_127" class="form-input jf-required" data-layout="half"> <select class="form-dropdown validate[required]" id="input_127" name="q127_ingenieroDe127" style="width:310px" data-component="dropdown" required="" aria-label="INGENIERO DE SERVICIO:">
+            <option value="">Seleccione</option>
+            <option value="Arturo Maldonado Martínez">Arturo Maldonado Martínez</option>
+            <option value="Daniel Cortez Perez">Daniel Cortez Perez</option>
+            <option value="Daniela Trejo Maqueda">Daniela Trejo Maqueda</option>
+            <option value="Edson Alfonso Corona Dávalos">Edson Alfonso Corona Dávalos</option>
+            <option value="Erick Geovanni Serrano Espíndola">Erick Geovanni Serrano Espíndola</option>
+            <option value="Joaquín García Rojel">Joaquín García Rojel</option>
+            <option value="Martín Parra Chino">Martín Parra Chino</option>
+            <option value=""></option>
+          </select> </div>
+      </li>
+      <li class="form-line jf-required" data-type="control_signature" id="id_78" data-signature-draw="Yes" data-signature-typed="No" data-signature-color="No" data-signature-font="No" data-use-jotform-sign="No"><label class="form-label form-label-left form-label-auto" id="label_78" for="input_78"> Firma<span class="form-required" aria-hidden="true">*</span> </label>
+        <div id="cid_78" class="form-input jf-required" data-layout="half">
+          <div data-wrapper-react="true">
+            <div id="signature_pad_78" class="form-advanced-signature-wrapper" data-component="advanced-signature" data-id="78" data-required="Yes" data-width="310" data-height="200" data-signature-draw="Yes" data-signature-typed="No" data-signature-color="No" data-signature-font="No" data-signature-default-method="" data-use-jotform-sign="No" style="border:none;background:transparent"><input type="hidden" name="q78_firma" class="output4 validate[required]" id="input_78" value="" /></div>
+          </div>
+        </div>
+      </li>
+      <li id="cid_43" class="form-input-wide" data-type="control_head">
+        <div class="form-header-group header-small">
+          <div class="header-text httac htvam">
+            <h3 id="header_43" class="form-header" data-component="header">RESPONSABLE O JEFE DE ÁREA</h3>
+          </div>
+        </div>
+      </li>
+      <li class="form-line" data-type="control_textbox" id="id_46"><label class="form-label form-label-left" id="label_46" for="input_46"> RESPONSABLE DE AREA </label>
+        <div id="cid_46" class="form-input" data-layout="half"> <span class="form-sub-label-container" style="vertical-align:top"><input type="text" id="input_46" name="q46_nombrey46" data-type="input-textbox" class="form-textbox" data-defaultvalue="" style="width:20px" size="20" data-component="textbox" aria-labelledby="label_46 sublabel_input_46" value="" /><label class="form-sub-label" for="input_46" id="sublabel_input_46" style="min-height:13px">Nombre completo</label></span> </div>
+      </li>
+      <li class="form-line" data-type="control_signature" id="id_79" data-signature-draw="Yes" data-signature-typed="No" data-signature-color="No" data-signature-font="No" data-use-jotform-sign="No"><label class="form-label form-label-left form-label-auto" id="label_79" for="input_79"> Firma </label>
+        <div id="cid_79" class="form-input" data-layout="half">
+          <div data-wrapper-react="true">
+            <div id="signature_pad_79" class="form-advanced-signature-wrapper" data-component="advanced-signature" data-id="79" data-required="No" data-width="310" data-height="200" data-signature-draw="Yes" data-signature-typed="No" data-signature-color="No" data-signature-font="No" data-signature-default-method="" data-use-jotform-sign="No" style="border:none;background:transparent"><input type="hidden" name="q79_firma79" class="output4 " id="input_79" value="" /></div>
+          </div>
+        </div>
+      </li>
+      <li class="form-line" data-type="control_textbox" id="id_136"><label class="form-label form-label-left form-label-auto" id="label_136" for="input_136"> JEFE DE BIOMÉDICA </label>
+        <div id="cid_136" class="form-input" data-layout="half"> <span class="form-sub-label-container" style="vertical-align:top"><input type="text" id="input_136" name="q136_jefeDe" data-type="input-textbox" class="form-textbox" data-defaultvalue="" style="width:20px" size="20" data-component="textbox" aria-labelledby="label_136 sublabel_input_136" value="" /><label class="form-sub-label" for="input_136" id="sublabel_input_136" style="min-height:13px">Nombre completo</label></span> </div>
+      </li>
+      <li class="form-line" data-type="control_signature" id="id_137" data-signature-draw="Yes" data-signature-typed="No" data-signature-color="No" data-signature-font="No" data-use-jotform-sign="No"><label class="form-label form-label-left form-label-auto" id="label_137" for="input_137"> Firma </label>
+        <div id="cid_137" class="form-input" data-layout="half">
+          <div data-wrapper-react="true">
+            <div id="signature_pad_137" class="form-advanced-signature-wrapper" data-component="advanced-signature" data-id="137" data-required="No" data-width="310" data-height="200" data-signature-draw="Yes" data-signature-typed="No" data-signature-color="No" data-signature-font="No" data-signature-default-method="" data-use-jotform-sign="No" style="border:none;background:transparent"><input type="hidden" name="q137_firma137" class="output4 " id="input_137" value="" /></div>
+          </div>
+        </div>
+      </li>
+      <li class="form-line" data-type="control_button" id="id_60">
+        <div id="cid_60" class="form-input-wide" data-layout="full">
+          <div data-align="auto" class="form-buttons-wrapper form-buttons-auto   jsTest-button-wrapperField"><button id="input_60" type="submit" class="form-submit-button submit-button jf-form-buttons jsTest-submitField legacy-submit" data-component="button" data-content="">Enviar</button></div>
+        </div>
+      </li>
+      <li style="display:none">Should be Empty: <input type="text" name="website" value="" type="hidden" /></li>
+    </ul>
+  </div>
+  <script>
+    JotForm.showJotFormPowered = "0";
+  </script>
+  <script>
+    JotForm.poweredByText = "Powered by Jotform";
+  </script><input type="hidden" class="simple_spc" id="simple_spc" name="simple_spc" value="260445478825062" />
+  <script type="text/javascript">
+    var all_spc = document.querySelectorAll("form[id='260445478825062'] .si" + "mple" + "_spc");
+    for (var i = 0; i < all_spc.length; i++)
+    {
+      all_spc[i].value = "260445478825062-260445478825062";
+    }
+  </script><input type="hidden" id="input_61" name="q61_idUnico" class="form-textbox form-hidden" data-defaultvalue="IAB-24470" data-component="autoincrement" aria-labelledby="label_61" value="IAB-24470" />
+</form>
+<div id="sr-status-message" class="sr-only" role="status" aria-live="polite" style="font-size: 0;"></div><script type="text/javascript">JotForm.ownerView=true;</script><script type="text/javascript">JotForm.isNewSACL=true;</script><script type="text/javascript">window.GOOGLE_SIGNON = "172124630376-qk1qmdfmur2ojaf39e070iqhpt2foaip.apps.googleusercontent.com"</script>
+<script type="text/javascript">window.FACEBOOK_SIGNON_APP_ID = "1140740696088074"</script>
+<script type="text/javascript">window.MICROSOFT_SIGNON_CLIENT_ID = "482577e8-f8d0-4a09-bbbb-15de3d05eebe"</script>
+<script>window.JotFormAPIEndpoint = "https://api.jotform.com"; </script>
+<script>window.JFForm = {"id":"260445478825062","draftID":"","skippable":true,"isHipaa":"","enforceHIPAARuleSet":false};</script> 
+<script defer src="https://cdn.jotfor.ms/s/umd/e9502ad9235/for-formuser.js"></script>

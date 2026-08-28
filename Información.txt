@@ -1,0 +1,58 @@
+Información	Preguntas encontradas: 57
+1 | 61 | control_autoincrement | ID único
+2 | 1 | control_head | ORDEN DE TRABAJO
+3 | 3 | control_text | FECHA DE SERVICIO
+4 | 62 | control_datetime | Fecha de Inicio:
+5 | 63 | control_datetime | Fecha de Fin:
+6 | 8 | control_head | UNIDAD MÉDICA
+7 | 10 | control_textbox | UNIDAD:
+8 | 14 | control_textbox | DOMICILIO:
+9 | 64 | control_phone | TELÉFONO:
+10 | 66 | control_dropdown | ENTIDAD:
+11 | 65 | control_email | EMAIL
+12 | 9 | control_head | DATOS DEL EQUIPO
+13 | 11 | control_textbox | EQUIPO:
+14 | 12 | control_textbox | MARCA:
+15 | 13 | control_textbox | MODELO:
+16 | 15 | control_textbox | SERIE:
+17 | 16 | control_textbox | INVENTARIO:
+18 | 19 | control_textbox | ÁREA O UBICACIÓN:
+19 | 67 | control_divider | Divisor
+20 | 20 | control_checkbox | TIPO DE SERVICIO O MANTENIMIENTO
+21 | 68 | control_textbox | OTRO:
+22 | 21 | control_checkbox | CLASIFICACIÓN DE LA REPARACIÓN
+23 | 69 | control_textbox | OTRO:
+24 | 22 | control_checkbox | EQUIPO DE MEDICIÓN Y/O SIMULADOR UTILIZADO
+25 | 70 | control_textbox | OTRO:
+26 | 23 | control_checkbox | DATOS DEL EQUIPO DE CALIBRACIÓN
+27 | 71 | control_textbox | OTRO:
+28 | 24 | control_checkbox | DOCUMENTACIÓN GENERADA Y ANEXADA:
+29 | 73 | control_dropdown | CERTIFICADO DE CALIBRACIÓN VIGENTE AÑO:
+30 | 26 | control_textbox | OTROS:
+31 | 75 | control_head | DESCRIPCIÓN DEL SERVICIO
+32 | 28 | control_checkbox | 1.- LIMPIEZA Y DESINFECCI N DEL EQUIPO CON PRUEBAS DE FUNCIONAMIENTO GENERAL
+33 | 29 | control_checkbox | 2.- CONDICIONES ESTÉTICAS DEL EQUIPO
+34 | 31 | control_checkbox | 3.- REVISIÓN DE CONDICIONES OPERATIVAS DEL EQUIPO
+35 | 155 | control_checkbox | 4.- REPARACIÓN DE EQUIPO
+36 | 33 | control_checkbox | 5.- CAMBIO DE REFACCIONES
+37 | 36 | control_checkbox | 6.- OPERATIVIDAD: APTO PARA PACIENTE
+38 | 39 | control_textarea | DETALLE DE FUNCIONALIDAD:
+39 | 76 | control_head | ESTATUS DE SEGUIMIENTO
+40 | 77 | control_checkbox | 
+41 | 38 | control_head | TECNOVIGILANCIA
+42 | 104 | control_dropdown | ¿EQUIPO FALLÓ CON PACIENTE?
+43 | 105 | control_dropdown | ¿EQUIPO FALLÓ Y DAÑO A PACIENTE?
+44 | 133 | control_widget | Valores de Medición
+45 | 57 | control_textarea | OBSERVACIONES:
+46 | 171 | control_divider | Divisor
+47 | 103 | control_pagebreak | Separador de página
+48 | 42 | control_head | INGENIERO DE SERVICIO
+49 | 147 | control_fileupload | Carga de archivo
+50 | 127 | control_dropdown | INGENIERO DE SERVICIO:
+51 | 78 | control_signature | Firma
+52 | 43 | control_head | RESPONSABLE O JEFE DE ÁREA
+53 | 46 | control_textbox | RESPONSABLE DE AREA
+54 | 79 | control_signature | Firma
+55 | 136 | control_textbox | JEFE DE BIOMÉDICA
+56 | 137 | control_signature | Firma
+57 | 60 | control_button | Enviar

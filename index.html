@@ -1,0 +1,948 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#005DA1">
+<title>Orden de Trabajo · Ingenieros Asociados</title>
+<link rel="manifest" href="manifest.json">
+<style>
+/* ============================================================
+   ORDEN DE TRABAJO · IA BIOMÉDICA
+   Dirección visual: panel de instrumento de calibración.
+   Grafito profundo + ámbar de equipo de medición, etiquetas
+   micro en versalitas, números tabulares. Sin fuentes web:
+   la app debe abrir igual sin señal.
+   ============================================================ */
+:root{
+  --ink:#06182A;
+  --panel:#0D2740;
+  --panel-2:#133351;
+  --line:#1D4870;
+  --amber:#ABE1F5;      /* celeste del logotipo: acento principal */
+  --azul:#005DA1;       /* azul corporativo */
+  --mint:#5FE0B4;
+  --alert:#FF7A68;
+  --text:#EAF4FB;
+  --muted:#8FAAC4;
+  --radius:10px;
+  --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  --safe-b:env(safe-area-inset-bottom,0px);
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;padding:0;background:var(--ink);color:var(--text);font-family:var(--sans);font-size:16px;overscroll-behavior-y:none}
+body{padding-bottom:calc(72px + var(--safe-b))}
+button,input,select,textarea{font-family:inherit;font-size:16px;color:inherit}
+:focus-visible{outline:2px solid var(--amber);outline-offset:2px}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+
+/* --- Lectura de estado (elemento firma) --- */
+.readout{position:sticky;top:0;z-index:40;background:linear-gradient(180deg,var(--ink) 70%,rgba(6,24,42,.92));border-bottom:1px solid var(--line)}
+.readout-top{display:flex;align-items:center;gap:10px;padding:10px 14px 6px}
+.brand{font-size:12px;letter-spacing:.16em;text-transform:uppercase;font-weight:700;color:var(--text)}
+.brand span{color:var(--amber)}
+.who{margin-left:auto;font-family:var(--mono);font-size:11px;color:var(--muted);text-align:right;line-height:1.25}
+.strip{display:flex;gap:0;border-top:1px solid var(--line);font-family:var(--mono);font-size:10.5px;letter-spacing:.06em}
+.cell{flex:1;padding:6px 10px 7px;border-right:1px solid var(--line);display:flex;flex-direction:column;gap:2px}
+.cell:last-child{border-right:0}
+.cell b{font-size:14px;font-weight:600;font-variant-numeric:tabular-nums}
+.cell i{font-style:normal;color:var(--muted);text-transform:uppercase}
+.on{color:var(--mint)} .off{color:var(--alert)} .wait{color:var(--amber)}
+
+/* --- Estructura --- */
+main{padding:14px 14px 24px;max-width:760px;margin:0 auto}
+h2{font-size:13px;letter-spacing:.14em;text-transform:uppercase;color:var(--amber);margin:0 0 4px;font-weight:700}
+.lead{color:var(--muted);font-size:13.5px;margin:0 0 16px;line-height:1.5}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:14px;margin-bottom:12px}
+.card.tight{padding:12px}
+.row{display:flex;gap:10px;flex-wrap:wrap}
+.row>*{flex:1;min-width:140px}
+
+/* --- Campos --- */
+label.f{display:block;margin-bottom:14px}
+label.f>span.lb{display:block;font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin-bottom:6px;font-weight:600}
+label.f>span.lb em{font-style:normal;color:var(--amber)}
+input[type=text],input[type=tel],input[type=email],input[type=date],input[type=time],input[type=number],select,textarea{
+  width:100%;background:var(--panel-2);border:1px solid var(--line);border-radius:8px;padding:11px 12px;color:var(--text);appearance:none}
+textarea{min-height:96px;resize:vertical;line-height:1.45}
+select{background-image:linear-gradient(45deg,transparent 50%,var(--muted) 50%),linear-gradient(135deg,var(--muted) 50%,transparent 50%);background-position:calc(100% - 18px) 50%,calc(100% - 13px) 50%;background-size:5px 5px,5px 5px;background-repeat:no-repeat;padding-right:36px}
+input::placeholder,textarea::placeholder{color:#5E7B96}
+
+/* --- Chips (opción múltiple) --- */
+.chips{display:flex;flex-wrap:wrap;gap:7px}
+.chip{background:var(--panel-2);border:1px solid var(--line);border-radius:999px;padding:9px 13px;font-size:13px;cursor:pointer;line-height:1.15;text-align:left}
+.chip[aria-pressed=true]{background:var(--amber);border-color:var(--amber);color:#06182A;font-weight:600}
+.chip.neg[aria-pressed=true]{background:var(--alert);border-color:var(--alert);color:#06182A}
+
+/* --- Botones --- */
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;background:var(--panel-2);border:1px solid var(--line);border-radius:8px;padding:12px 16px;font-weight:600;cursor:pointer;font-size:14px}
+.btn.primary{background:var(--amber);border-color:var(--amber);color:#06182A}
+.btn.ghost{background:transparent}
+.btn.danger{color:var(--alert);border-color:#5A2E29}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.btn.block{width:100%}
+.actions{display:flex;gap:10px;margin-top:6px}
+.actions>.btn{flex:1}
+
+/* --- Firma --- */
+.sigwrap{border:1px solid #9FC2DC;border-radius:8px;background:#F6FBFE;position:relative}
+.sigwrap canvas{width:100%;height:170px;display:block;touch-action:none;border-radius:8px}
+.sighint{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#98A3AF;font-size:12px;letter-spacing:.12em;text-transform:uppercase;pointer-events:none}
+
+/* --- Fotos --- */
+.thumbs{display:grid;grid-template-columns:repeat(auto-fill,minmax(88px,1fr));gap:8px;margin-top:10px}
+.thumb{position:relative;aspect-ratio:1;border-radius:8px;overflow:hidden;border:1px solid var(--line)}
+.thumb img{width:100%;height:100%;object-fit:cover;display:block}
+.thumb button{position:absolute;top:4px;right:4px;background:rgba(18,22,28,.85);border:1px solid var(--line);border-radius:6px;color:var(--alert);width:26px;height:26px;line-height:1;cursor:pointer;font-size:14px}
+
+/* --- Tabla de mediciones --- */
+table.med{width:100%;border-collapse:collapse;font-size:13px}
+table.med th{font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);text-align:left;padding:0 4px 6px;font-weight:600}
+table.med td{padding:0 4px 6px}
+table.med input{padding:9px 8px;font-size:14px}
+
+/* --- Listas --- */
+.item{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:12px 13px;margin-bottom:9px;display:flex;gap:12px;align-items:flex-start}
+.item .body{flex:1;min-width:0}
+.item .t{font-weight:600;font-size:14.5px;margin-bottom:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.item .s{font-size:12px;color:var(--muted);font-family:var(--mono);line-height:1.5}
+.tag{font-family:var(--mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase;padding:3px 7px;border-radius:5px;border:1px solid var(--line);color:var(--muted);white-space:nowrap}
+.tag.ok{color:var(--mint);border-color:#1C5347}
+.tag.pend{color:var(--amber);border-color:#1D4870}
+.tag.err{color:var(--alert);border-color:#5A2E29}
+.empty{border:1px dashed var(--line);border-radius:var(--radius);padding:26px 18px;text-align:center;color:var(--muted);font-size:13.5px;line-height:1.55}
+
+/* --- Progreso por secciones --- */
+.steps{display:flex;gap:4px;margin:2px 0 16px}
+.steps b{flex:1;height:3px;border-radius:2px;background:var(--line)}
+.steps b.done{background:var(--mint)}
+.steps b.now{background:var(--amber)}
+
+/* --- Barra inferior --- */
+nav.tabs{position:fixed;left:0;right:0;bottom:0;z-index:50;background:rgba(9,32,54,.97);border-top:1px solid var(--line);display:flex;padding-bottom:var(--safe-b);backdrop-filter:blur(8px)}
+nav.tabs button{flex:1;background:none;border:0;padding:10px 4px 11px;color:var(--muted);display:flex;flex-direction:column;align-items:center;gap:4px;font-size:10px;letter-spacing:.07em;text-transform:uppercase;cursor:pointer;font-weight:600;position:relative}
+nav.tabs button[aria-current=page]{color:var(--amber)}
+nav.tabs .ic{font-size:17px;line-height:1}
+nav.tabs .badge{position:absolute;top:5px;right:calc(50% - 22px);background:var(--alert);color:#06182A;border-radius:999px;font-size:9px;padding:1px 5px;font-weight:700}
+
+/* --- Aviso --- */
+.note{border-left:2px solid var(--amber);background:#0F2D45;padding:10px 12px;border-radius:0 8px 8px 0;font-size:13px;line-height:1.5;margin-bottom:12px;color:#D7EEFA}
+.note.bad{border-color:var(--alert);background:#2B1A18;color:#F8D8D2}
+.toast{position:fixed;left:14px;right:14px;bottom:calc(84px + var(--safe-b));z-index:60;background:var(--panel-2);border:1px solid var(--line);border-left:3px solid var(--mint);border-radius:8px;padding:12px 14px;font-size:13.5px;box-shadow:0 10px 30px rgba(0,0,0,.5)}
+.toast.bad{border-left-color:var(--alert)}
+.kv{font-family:var(--mono);font-size:12px;line-height:1.7;color:var(--muted);word-break:break-word}
+.kv b{color:var(--text);font-weight:600}
+.spin{display:inline-block;width:14px;height:14px;border:2px solid rgba(255,255,255,.25);border-top-color:var(--amber);border-radius:50%;animation:sp .7s linear infinite}
+@keyframes sp{to{transform:rotate(360deg)}}
+.center{display:flex;align-items:center;justify-content:center;min-height:60vh;flex-direction:column;gap:14px;text-align:center;padding:20px}
+</style>
+</head>
+<body>
+<div id="root"><div class="center"><span class="spin"></span><span style="color:#8C99A6;font-size:13px">Cargando…</span></div></div>
+
+<script>
+/* ==========================================================
+   CONFIGURACIÓN — editar solo estas 3 líneas
+   ========================================================== */
+window.CONFIG = {
+  // URL de la implementación del Apps Script (termina en /exec)
+  PROXY_URL: "https://script.google.com/macros/s/PEGAR_ID_DE_IMPLEMENTACION/exec",
+  // Token compartido: debe ser idéntico al del Apps Script
+  TOKEN: "CAMBIAR-ESTE-TOKEN",
+  FORM_ID: "260445478825062",
+  BUILD: "Rev.07"
+};
+</script>
+
+<script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+<script src="https://unpkg.com/@babel/standalone@7.24.7/babel.min.js" crossorigin></script>
+
+<script type="text/babel" data-presets="react">
+const { useState, useEffect, useRef, useCallback, useMemo } = React;
+
+/* ==========================================================
+   1. ALMACENAMIENTO LOCAL  (IndexedDB → localStorage → RAM)
+   ========================================================== */
+const Store = (() => {
+  const DB = "ot_ia_v1", STORES = ["drafts", "outbox", "sent", "meta"];
+  let db = null, modo = "memoria";
+  const mem = { drafts: {}, outbox: {}, sent: {}, meta: {} };
+
+  function abrir() {
+    return new Promise(res => {
+      if (!("indexedDB" in window)) return res(null);
+      let req;
+      try { req = indexedDB.open(DB, 1); } catch (e) { return res(null); }
+      req.onupgradeneeded = () => STORES.forEach(s => {
+        if (!req.result.objectStoreNames.contains(s)) req.result.createObjectStore(s, { keyPath: "id" });
+      });
+      req.onsuccess = () => res(req.result);
+      req.onerror = () => res(null);
+      setTimeout(() => res(null), 2500);
+    });
+  }
+  async function init() {
+    db = await abrir();
+    if (db) { modo = "indexeddb"; return modo; }
+    try { localStorage.setItem("__t", "1"); localStorage.removeItem("__t"); modo = "localstorage"; }
+    catch (e) { modo = "memoria"; }
+    return modo;
+  }
+  const lsKey = (s, id) => `${DB}:${s}:${id}`;
+  function lsAll(s) {
+    const out = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (k && k.startsWith(`${DB}:${s}:`)) { try { out.push(JSON.parse(localStorage.getItem(k))); } catch (e) {} }
+    }
+    return out;
+  }
+  function tx(s, m) { return db.transaction(s, m).objectStore(s); }
+
+  return {
+    init, get modo() { return modo; },
+    async put(s, obj) {
+      if (modo === "indexeddb") return new Promise((res, rej) => { const r = tx(s, "readwrite").put(obj); r.onsuccess = () => res(obj); r.onerror = () => rej(r.error); });
+      if (modo === "localstorage") { localStorage.setItem(lsKey(s, obj.id), JSON.stringify(obj)); return obj; }
+      mem[s][obj.id] = obj; return obj;
+    },
+    async del(s, id) {
+      if (modo === "indexeddb") return new Promise(res => { const r = tx(s, "readwrite").delete(id); r.onsuccess = () => res(); r.onerror = () => res(); });
+      if (modo === "localstorage") { localStorage.removeItem(lsKey(s, id)); return; }
+      delete mem[s][id];
+    },
+    async all(s) {
+      if (modo === "indexeddb") return new Promise(res => { const r = tx(s, "readonly").getAll(); r.onsuccess = () => res(r.result || []); r.onerror = () => res([]); });
+      if (modo === "localstorage") return lsAll(s);
+      return Object.values(mem[s]);
+    },
+    async one(s, id) { return (await this.all(s)).find(x => x.id === id) || null; }
+  };
+})();
+
+/* ==========================================================
+   2. TRANSPORTE  (JSONP para leer, POST text/plain para enviar)
+   ========================================================== */
+const Api = {
+  /* Camino 1: fetch directo. Apps Script permite CORS en la respuesta final,
+     así que este funciona desde GitHub Pages y devuelve el error HTTP real.
+     Camino 2 (respaldo): JSONP con <script>, por si una red bloquea el fetch. */
+  viaFetch(params) {
+    const q = new URLSearchParams({ ...params, token: CONFIG.TOKEN });
+    return fetch(`${CONFIG.PROXY_URL}?${q.toString()}`, { redirect: "follow" })
+      .then(async r => {
+        const txt = await r.text();
+        if (!r.ok) { const e = new Error("El proxy respondió HTTP " + r.status); e.servidor = true; throw e; }
+        let d;
+        try { d = JSON.parse(txt); }
+        catch (err) { const e = new Error("Respuesta ilegible del proxy: " + txt.slice(0, 120)); e.servidor = true; throw e; }
+        if (d && d.ok === false) { const e = new Error(d.error || "Error del servidor"); e.servidor = true; throw e; }
+        return d;
+      });
+  },
+  viaJsonp(params) {
+    return new Promise((res, rej) => {
+      const cb = "jp_" + Math.random().toString(36).slice(2);
+      const q = new URLSearchParams({ ...params, token: CONFIG.TOKEN, callback: cb });
+      const s = document.createElement("script");
+      const limpiar = () => { delete window[cb]; s.remove(); clearTimeout(t); };
+      const t = setTimeout(() => { limpiar(); rej(new Error("El proxy no respondió a tiempo")); }, 25000);
+      window[cb] = d => { limpiar(); (d && d.ok === false) ? rej(new Error(d.error || "Error del servidor")) : res(d); };
+      s.onerror = () => { limpiar(); rej(new Error("El navegador no pudo cargar el proxy")); };
+      s.src = `${CONFIG.PROXY_URL}?${q.toString()}`;
+      document.head.appendChild(s);
+    });
+  },
+  async get(params) {
+    if (!navigator.onLine) throw new Error("Sin señal. Se reintentará al reconectar.");
+    try {
+      return await Api.viaFetch(params);
+    } catch (e) {
+      if (e.servidor) throw e;              // el proxy contestó: no tiene caso reintentar
+      try { return await Api.viaJsonp(params); }
+      catch (e2) { throw new Error(e2.message + " · fetch: " + e.message); }
+    }
+  },
+  async post(body) {
+    const r = await fetch(CONFIG.PROXY_URL, {
+      method: "POST", redirect: "follow",
+      headers: { "Content-Type": "text/plain;charset=utf-8" },
+      body: JSON.stringify({ ...body, token: CONFIG.TOKEN })
+    });
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    const d = await r.json();
+    if (d.ok === false) throw new Error(d.error || "El servidor rechazó el envío");
+    return d;
+  }
+};
+
+/* ==========================================================
+   3. ESTRUCTURA DE LA ORDEN DE TRABAJO
+   Los campos se enlazan al formulario por su TEXTO de pregunta;
+   el qid real se resuelve contra el esquema descargado.
+   ========================================================== */
+const ESTADOS = ["Aguascalientes","Baja California","Baja California Sur","Campeche","Chiapas","Chihuahua","Ciudad de México","Coahuila","Colima","Durango","Estado de México","Guanajuato","Guerrero","Hidalgo","Jalisco","Michoacán","Morelos","Nayarit","Nuevo León","Oaxaca","Puebla","Querétaro","Quintana Roo","San Luis Potosí","Sinaloa","Sonora","Tabasco","Tamaulipas","Tlaxcala","Veracruz","Yucatán","Zacatecas"];
+const INGENIEROS = ["Arturo Maldonado Martínez","Daniel Cortez Perez","Daniela Trejo Maqueda","Edson Alfonso Corona Dávalos","Erick Geovanni Serrano Espíndola","Joaquín García Rojel","Martín Parra Chino"];
+
+const SECCIONES = [
+{ id:"fecha", titulo:"Fecha de servicio", campos:[
+  { k:"fechaIni", et:"Fecha de inicio", tipo:"datetime", req:true, m:{ label:"Fecha de Inicio:" } },
+  { k:"fechaFin", et:"Fecha de fin",    tipo:"datetime", req:true, m:{ label:"Fecha de Fin:" } },
+]},
+{ id:"unidad", titulo:"Unidad médica", campos:[
+  { k:"unidad",    et:"Unidad",    tipo:"texto", req:true, m:{ label:"UNIDAD:" } },
+  { k:"domicilio", et:"Domicilio", tipo:"texto", req:true, m:{ label:"DOMICILIO:" } },
+  { k:"telefono",  et:"Teléfono",  tipo:"tel",   req:true, m:{ label:"TELÉFONO:" } },
+  { k:"entidad",   et:"Entidad",   tipo:"select", req:true, opciones:ESTADOS, m:{ label:"ENTIDAD:" } },
+  { k:"email",     et:"Email",     tipo:"email", req:true, m:{ label:"EMAIL" } },
+]},
+{ id:"equipo", titulo:"Datos del equipo", campos:[
+  { k:"equipo",    et:"Equipo",           tipo:"texto", req:true, m:{ label:"EQUIPO:" } },
+  { k:"marca",     et:"Marca",            tipo:"texto", req:true, m:{ label:"MARCA:" } },
+  { k:"modelo",    et:"Modelo",           tipo:"texto", req:true, m:{ label:"MODELO:" } },
+  { k:"serie",     et:"Serie",            tipo:"texto", req:true, m:{ label:"SERIE:" } },
+  { k:"inventario",et:"Inventario",       tipo:"texto", req:true, m:{ label:"INVENTARIO:" } },
+  { k:"area",      et:"Área o ubicación", tipo:"texto", req:true, m:{ label:"ÁREA O UBICACIÓN:" } },
+]},
+{ id:"clasif", titulo:"Clasificación del servicio", campos:[
+  { k:"tipoServicio", et:"Tipo de servicio o mantenimiento", tipo:"checks", req:true, m:{ label:"TIPO DE SERVICIO O MANTENIMIENTO" },
+    opciones:["PREVENTIVO","CORRECTIVO","EVALUACIÓN","ASISTENCIA BIOMÉDICA","CURSO DE CAPACITACIÓN","GRABADO","CALIBRACIÓN","ENTREGA","INSTRUMENTAL"] },
+  { k:"tipoServicioOtro", et:"Otro tipo de servicio", tipo:"texto", m:{ label:"OTRO:", nth:1 } },
+  { k:"clasifRep", et:"Clasificación de la reparación", tipo:"checks", m:{ label:"CLASIFICACIÓN DE LA REPARACIÓN" },
+    opciones:["REPARACIÓN ELECTRÓNICA","REPARACIÓN ELÉCTRICA","REPARACIÓN MECÁNICA","REPARACIÓN HIDRÁULICA","REPARACIÓN NEUMÁTICA"] },
+  { k:"clasifRepOtro", et:"Otra clasificación", tipo:"texto", m:{ label:"OTRO:", nth:2 } },
+]},
+{ id:"medicion", titulo:"Equipo de medición", campos:[
+  { k:"equipoMedicion", et:"Equipo de medición y/o simulador utilizado", tipo:"checks", m:{ label:"EQUIPO DE MEDICIÓN Y/O SIMULADOR UTILIZADO" },
+    opciones:["ANÁLISIS EMA","RADIÓMETRO","TACÓMETRO","ELECTROCAUTERIO","SEGURIDAD ELÉCTRICA","SIGNOS VITALES (PANI, IBP, ECG, SPO2, TEMPERATURA)","DESFIBRILADOR","FLUJO Y VOLUMEN","INCUBADORA ( C, Hr, db, Lux, Caudal aire)","MARCAPASOS","PESAS","GASES","VERNIER"] },
+  { k:"equipoMedicionOtro", et:"Otro equipo de medición", tipo:"texto", m:{ label:"OTRO:", nth:3 } },
+  { k:"equipoCal", et:"Datos del equipo de calibración", tipo:"checks", m:{ label:"DATOS DEL EQUIPO DE CALIBRACIÓN" },
+    opciones:["SEG. ELEC. ESA 612 ns: 3595053","FLUKE PROSIM8 ns: 3737639.","REMEX PARALELEPÍPEDA 10 Kg.","FLUKE VT305 ns: BF100750","FLUKE SPOT LIGHT ns: 3562069","REMEX PARALELEPÍPEDA 5 Kg.","FLUKE IMPULSE 7000 DP ns: 4430700","LT LUTRON LM-8102 ns: AG-16162","RIKEN KEIKI FI-2l ns: 378040019 ES","TACHO METER 8000 ns: 956428","DNI NEVADA 454A ESA ns:2468","TES 1333 RADIÓMETRO ns: 070508925"] },
+  { k:"equipoCalOtro", et:"Otro equipo de calibración", tipo:"texto", m:{ label:"OTRO:", nth:4 } },
+  { k:"documentacion", et:"Documentación generada y anexada", tipo:"checks", m:{ label:"DOCUMENTACIÓN GENERADA Y ANEXADA" },
+    opciones:["RUTINA DE MANTENIMIENTO","RESULTADO DE CALIBRACIÓN","CERTIFICADO EMA"] },
+  { k:"certAnio", et:"Certificado de calibración vigente, año", tipo:"select", opciones:["2024","2025","2026"], m:{ prefijo:"CERTIFICADO DE CALIBRACIÓN VIGENTE" } },
+  { k:"documentacionOtro", et:"Otra documentación", tipo:"texto", m:{ label:"OTROS:" } },
+]},
+{ id:"descripcion", titulo:"Descripción del servicio", campos:[
+  { k:"d1", et:"1. Limpieza y desinfección con pruebas de funcionamiento", tipo:"checks", req:true, m:{ prefijo:"1.-" }, opciones:["REALIZADO","N\\A"] },
+  { k:"d2", et:"2. Condiciones estéticas del equipo", tipo:"checks", req:true, m:{ prefijo:"2.-" }, opciones:["REALIZADO","BUEN ESTADO","DETALLES ESTÉTICOS","N\\A"] },
+  { k:"d3", et:"3. Revisión de condiciones operativas", tipo:"checks", req:true, m:{ prefijo:"3.-" }, opciones:["REALIZADO","N\\A"] },
+  { k:"d4", et:"4. Reparación de equipo", tipo:"checks", req:true, m:{ prefijo:"4.-" }, opciones:["SI","NO","N\\A"] },
+  { k:"d5", et:"5. Cambio de refacciones", tipo:"checks", req:true, m:{ prefijo:"5.-" }, opciones:["SI","NO","PROPORCIONADOAS POR I.A","PROPORCIONADAS POR EL CLIENTE","N\\A"] },
+  { k:"d6", et:"6. Operatividad: apto para paciente", tipo:"checks", req:true, m:{ prefijo:"6.-" }, opciones:["SI","NO","FALTAN ACCESORIOS","N\\A"], negativas:["NO","FALTAN ACCESORIOS"] },
+  { k:"detalle", et:"Detalle de funcionalidad", tipo:"area", req:true, m:{ label:"DETALLE DE FUNCIONALIDAD:" } },
+]},
+{ id:"seguimiento", titulo:"Estatus y tecnovigilancia", campos:[
+  { k:"estatus", et:"Estatus de seguimiento", tipo:"checks", m:{ nombre:"escribaUna" },
+    opciones:["GARANTÍA","REQUIERE COTIZACIÓN","EN CONTRATO","A PRUEBA POR 8 DÍAS","FUERA DE SERVICIO"], negativas:["FUERA DE SERVICIO"] },
+  { k:"falloPaciente", et:"¿Equipo falló con paciente?", tipo:"select", opciones:["Si","No"], m:{ label:"¿EQUIPO FALLÓ CON PACIENTE?" } },
+  { k:"danoPaciente",  et:"¿Equipo falló y dañó a paciente?", tipo:"select", opciones:["Si","No"], m:{ label:"¿EQUIPO FALLÓ Y DAÑO A PACIENTE?" } },
+  { k:"mediciones", et:"Valores de medición", tipo:"tabla", m:{ label:"Valores de Medición" } },
+  { k:"observaciones", et:"Observaciones", tipo:"area", m:{ label:"OBSERVACIONES:" } },
+]},
+{ id:"firmas", titulo:"Evidencia y firmas", campos:[
+  { k:"fotos", et:"Evidencia fotográfica", tipo:"fotos", m:{ label:"Carga de archivo" } },
+  { k:"ingeniero", et:"Ingeniero de servicio", tipo:"select", req:true, opciones:INGENIEROS, m:{ label:"INGENIERO DE SERVICIO:" } },
+  { k:"firmaIng", et:"Firma del ingeniero", tipo:"firma", req:true, m:{ label:"Firma", nth:1 } },
+  { k:"responsable", et:"Responsable de área", tipo:"texto", m:{ label:"RESPONSABLE DE AREA" } },
+  { k:"firmaResp", et:"Firma del responsable", tipo:"firma", m:{ label:"Firma", nth:2 } },
+  { k:"jefeBio", et:"Jefe de biomédica", tipo:"texto", m:{ label:"JEFE DE BIOMÉDICA" } },
+  { k:"firmaJefe", et:"Firma del jefe de biomédica", tipo:"firma", m:{ label:"Firma", nth:3 } },
+]},
+];
+const TODOS = SECCIONES.flatMap(s => s.campos);
+
+/* ==========================================================
+   4. UTILIDADES
+   ========================================================== */
+const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+const norm = s => (s || "").toString().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\s+/g, " ").trim().toUpperCase().replace(/[:.]+$/, "");
+const hoyISO = () => { const d = new Date(); return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0"); };
+const horaISO = () => { const d = new Date(); return String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0"); };
+const fmtFecha = ts => { const d = new Date(ts); return d.toLocaleDateString("es-MX", { day: "2-digit", month: "short" }) + " " + d.toLocaleTimeString("es-MX", { hour: "2-digit", minute: "2-digit" }); };
+
+function nuevaOrden(ingeniero) {
+  const v = {};
+  TODOS.forEach(c => {
+    v[c.k] = c.tipo === "checks" ? [] : c.tipo === "fotos" ? [] : c.tipo === "tabla" ? [{ m: "", prog: "", desp: "", med: "" }] : c.tipo === "datetime" ? { fecha: hoyISO(), hora: horaISO() } : "";
+  });
+  v.ingeniero = ingeniero || "";
+  return { id: uid(), creada: Date.now(), actualizada: Date.now(), seccion: 0, valores: v };
+}
+
+/* Resuelve cada campo contra el esquema real del formulario */
+const NO_CAPTURAN = ["control_head", "control_text", "control_button", "control_pagebreak",
+  "control_collapse", "control_divider", "control_image"];
+
+function resolverMapa(preguntas) {
+  // Los encabezados repiten el texto de la pregunta que anuncian ("ESTATUS DE
+  // SEGUIMIENTO", "INGENIERO DE SERVICIO:"). Si se enlazan, el dato se escribe
+  // en un título y se pierde: por eso quedan fuera de los candidatos.
+  const lista = Object.values(preguntas || {})
+    .filter(q => NO_CAPTURAN.indexOf(q.type) === -1)
+    .sort((a, b) => Number(a.order) - Number(b.order));
+  const mapa = {}, faltantes = [];
+  TODOS.forEach(c => {
+    let cand;
+    if (c.m.nombre) {
+      cand = lista.filter(q => q.name === c.m.nombre);
+    } else if (c.m.prefijo) {
+      cand = lista.filter(q => norm(q.text).startsWith(norm(c.m.prefijo)));
+    } else {
+      const L = norm(c.m.label);
+      cand = lista.filter(q => norm(q.text) === L);
+      if (!cand.length) cand = lista.filter(q => norm(q.text).startsWith(L) || norm(q.text).includes(L));
+    }
+    const q = cand[(c.m.nth || 1) - 1];
+    if (q) mapa[c.k] = { qid: q.qid, type: q.type, name: q.name, text: q.text, timeFormat: q.timeFormat };
+    else faltantes.push(c);
+  });
+  return { mapa, faltantes };
+}
+
+/* Convierte el borrador a { qid: valor } listo para el proxy */
+function construirPayload(valores, mapa) {
+  const out = {};
+  TODOS.forEach(c => {
+    const m = mapa[c.k]; if (!m) return;
+    let v = valores[c.k];
+    if (c.tipo === "fotos") return;                       // se envían aparte
+    if (c.tipo === "checks") { if (!v || !v.length) return; out[m.qid] = { tipo: "checks", valor: v }; return; }
+    if (c.tipo === "datetime") { if (!v || !v.fecha) return; out[m.qid] = { tipo: "datetime", valor: v }; return; }
+    if (c.tipo === "tabla") {
+      const t = (v || []).filter(r => r.m || r.prog || r.desp || r.med);
+      if (!t.length) return; out[m.qid] = { tipo: "tabla", valor: t }; return;
+    }
+    if (c.tipo === "firma") { if (!v) return; out[m.qid] = { tipo: "firma", valor: v }; return; }
+    if (v !== "" && v != null) out[m.qid] = { tipo: "texto", valor: String(v) };
+  });
+  return out;
+}
+
+function faltanRequeridos(valores) {
+  return TODOS.filter(c => {
+    if (!c.req) return false;
+    const v = valores[c.k];
+    if (c.tipo === "checks") return !v || !v.length;
+    if (c.tipo === "datetime") return !v || !v.fecha;
+    return !v;
+  });
+}
+
+async function comprimirImagen(file, max = 1400, calidad = 0.72) {
+  const dataUrl = await new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = rej; r.readAsDataURL(file); });
+  const img = await new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = dataUrl; });
+  const esc = Math.min(1, max / Math.max(img.width, img.height));
+  const cv = document.createElement("canvas");
+  cv.width = Math.round(img.width * esc); cv.height = Math.round(img.height * esc);
+  cv.getContext("2d").drawImage(img, 0, 0, cv.width, cv.height);
+  return cv.toDataURL("image/jpeg", calidad);
+}
+
+/* ==========================================================
+   5. CAMPOS
+   ========================================================== */
+function Etiqueta({ c }) {
+  return <span className="lb">{c.et}{c.req && <em> *</em>}</span>;
+}
+
+function Campo({ c, valor, set }) {
+  if (c.tipo === "texto" || c.tipo === "tel" || c.tipo === "email")
+    return <label className="f"><Etiqueta c={c} />
+      <input type={c.tipo === "texto" ? "text" : c.tipo} value={valor || ""} onChange={e => set(e.target.value)}
+        inputMode={c.tipo === "tel" ? "tel" : undefined} autoComplete="off" /></label>;
+
+  if (c.tipo === "area")
+    return <label className="f"><Etiqueta c={c} /><textarea value={valor || ""} onChange={e => set(e.target.value)} /></label>;
+
+  if (c.tipo === "select")
+    return <label className="f"><Etiqueta c={c} />
+      <select value={valor || ""} onChange={e => set(e.target.value)}>
+        <option value="">Seleccione</option>
+        {c.opciones.map(o => <option key={o} value={o}>{o}</option>)}
+      </select></label>;
+
+  if (c.tipo === "datetime") {
+    const v = valor || { fecha: "", hora: "" };
+    return <div className="f"><Etiqueta c={c} />
+      <div className="row">
+        <input type="date" value={v.fecha || ""} onChange={e => set({ ...v, fecha: e.target.value })} />
+        <input type="time" value={v.hora || ""} onChange={e => set({ ...v, hora: e.target.value })} />
+      </div></div>;
+  }
+
+  if (c.tipo === "checks") {
+    const sel = valor || [];
+    const alternar = o => set(sel.includes(o) ? sel.filter(x => x !== o) : [...sel, o]);
+    return <div className="f"><Etiqueta c={c} />
+      <div className="chips">
+        {c.opciones.map(o =>
+          <button key={o} type="button" className={"chip" + ((c.negativas || []).includes(o) ? " neg" : "")}
+            aria-pressed={sel.includes(o)} onClick={() => alternar(o)}>{o}</button>)}
+      </div></div>;
+  }
+
+  if (c.tipo === "tabla") {
+    const filas = valor && valor.length ? valor : [{ m: "", prog: "", desp: "", med: "" }];
+    const cambiar = (i, k, val) => set(filas.map((f, j) => j === i ? { ...f, [k]: val } : f));
+    return <div className="f"><Etiqueta c={c} />
+      <table className="med">
+        <thead><tr><th>Medición</th><th>Valor programado</th><th>Valor desplegado</th><th>Valor medido</th><th></th></tr></thead>
+        <tbody>{filas.map((f, i) =>
+          <tr key={i}>
+            <td><input type="text" value={f.m} onChange={e => cambiar(i, "m", e.target.value)} /></td>
+            <td><input type="text" value={f.prog} onChange={e => cambiar(i, "prog", e.target.value)} /></td>
+            <td><input type="text" value={f.desp} onChange={e => cambiar(i, "desp", e.target.value)} /></td>
+            <td><input type="text" value={f.med} onChange={e => cambiar(i, "med", e.target.value)} /></td>
+            <td><button type="button" className="btn ghost" style={{ padding: "8px 10px" }}
+              onClick={() => set(filas.filter((_, j) => j !== i))}>×</button></td>
+          </tr>)}</tbody>
+      </table>
+      <button type="button" className="btn ghost" style={{ marginTop: 8 }}
+        onClick={() => set([...filas, { m: "", prog: "", desp: "", med: "" }])}>+ Agregar medición</button>
+    </div>;
+  }
+
+  if (c.tipo === "firma") return <FirmaCampo c={c} valor={valor} set={set} />;
+  if (c.tipo === "fotos") return <FotosCampo c={c} valor={valor} set={set} />;
+  return null;
+}
+
+function FirmaCampo({ c, valor, set }) {
+  const ref = useRef(null), dib = useRef(false), ult = useRef(null);
+  const preparar = useCallback(() => {
+    const cv = ref.current; if (!cv) return;
+    const dpr = window.devicePixelRatio || 1, r = cv.getBoundingClientRect();
+    if (cv.width === Math.round(r.width * dpr)) return;
+    cv.width = Math.round(r.width * dpr); cv.height = Math.round(r.height * dpr);
+    const ctx = cv.getContext("2d");
+    ctx.scale(dpr, dpr); ctx.lineWidth = 2.6; ctx.lineCap = "round"; ctx.lineJoin = "round"; ctx.strokeStyle = "#0B1116";
+    if (valor) { const img = new Image(); img.onload = () => ctx.drawImage(img, 0, 0, r.width, r.height); img.src = valor; }
+  }, [valor]);
+  useEffect(() => { preparar(); window.addEventListener("resize", preparar); return () => window.removeEventListener("resize", preparar); }, [preparar]);
+
+  const pos = e => { const r = ref.current.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; };
+  const abajo = e => { e.preventDefault(); ref.current.setPointerCapture(e.pointerId); dib.current = true; ult.current = pos(e); };
+  const mover = e => {
+    if (!dib.current) return;
+    const ctx = ref.current.getContext("2d"), p = pos(e);
+    ctx.beginPath(); ctx.moveTo(ult.current.x, ult.current.y); ctx.lineTo(p.x, p.y); ctx.stroke(); ult.current = p;
+  };
+  const arriba = () => { if (!dib.current) return; dib.current = false; set(ref.current.toDataURL("image/png")); };
+  const limpiar = () => { const cv = ref.current, ctx = cv.getContext("2d"); ctx.clearRect(0, 0, cv.width, cv.height); set(""); };
+
+  return <div className="f"><Etiqueta c={c} />
+    <div className="sigwrap">
+      <canvas ref={ref} onPointerDown={abajo} onPointerMove={mover} onPointerUp={arriba} onPointerLeave={arriba} />
+      {!valor && <div className="sighint">Firme aquí</div>}
+    </div>
+    <button type="button" className="btn ghost" style={{ marginTop: 8 }} onClick={limpiar}>Borrar firma</button>
+  </div>;
+}
+
+function FotosCampo({ c, valor, set }) {
+  const [cargando, setCargando] = useState(false);
+  const fotos = valor || [];
+  const agregar = async e => {
+    const files = Array.from(e.target.files || []); e.target.value = "";
+    if (!files.length) return;
+    setCargando(true);
+    const nuevas = [];
+    for (const f of files) { try { nuevas.push({ id: uid(), nombre: f.name, dataUrl: await comprimirImagen(f) }); } catch (err) {} }
+    set([...fotos, ...nuevas]); setCargando(false);
+  };
+  return <div className="f"><Etiqueta c={c} />
+    <label className="btn ghost block" style={{ cursor: "pointer" }}>
+      {cargando ? <span className="spin" /> : "Agregar fotos"}
+      <input type="file" accept="image/*" multiple onChange={agregar} style={{ display: "none" }} />
+    </label>
+    {!!fotos.length && <div className="thumbs">{fotos.map(f =>
+      <div className="thumb" key={f.id}><img src={f.dataUrl} alt="" />
+        <button type="button" onClick={() => set(fotos.filter(x => x.id !== f.id))}>×</button></div>)}</div>}
+  </div>;
+}
+
+/* ==========================================================
+   6. PANTALLAS
+   ========================================================== */
+function Identificacion({ onListo }) {
+  const [n, setN] = useState("");
+  return <main>
+    <div className="center">
+      <div style={{ letterSpacing: ".2em", fontSize: 12, color: "#8C99A6", textTransform: "uppercase" }}>Ingenieros Asociados</div>
+      <h1 style={{ fontSize: 26, margin: 0, letterSpacing: "-.01em" }}>Orden de Trabajo</h1>
+      <p className="lead" style={{ maxWidth: 320 }}>Elija su nombre. Queda guardado en este dispositivo para filtrar sus borradores y envíos.</p>
+      <div style={{ width: "100%", maxWidth: 380 }}>
+        <select value={n} onChange={e => setN(e.target.value)}>
+          <option value="">Seleccione ingeniero</option>
+          {INGENIEROS.map(i => <option key={i} value={i}>{i}</option>)}
+        </select>
+        <button className="btn primary block" style={{ marginTop: 12 }} disabled={!n} onClick={() => onListo(n)}>Entrar</button>
+      </div>
+    </div>
+  </main>;
+}
+
+function Formulario({ borrador, guardar, enviar, cancelar, mapa, faltantes }) {
+  const [v, setV] = useState(borrador.valores);
+  const [sec, setSec] = useState(borrador.seccion || 0);
+  const [errs, setErrs] = useState([]);
+  const timer = useRef(null);
+
+  const set = (k, val) => setV(prev => ({ ...prev, [k]: val }));
+
+  useEffect(() => { // autoguardado
+    clearTimeout(timer.current);
+    timer.current = setTimeout(() => guardar({ ...borrador, valores: v, seccion: sec, actualizada: Date.now() }, true), 700);
+    return () => clearTimeout(timer.current);
+  }, [v, sec]);
+
+  useEffect(() => { window.scrollTo({ top: 0, behavior: "instant" }); }, [sec]);
+
+  const S = SECCIONES[sec], ultima = sec === SECCIONES.length - 1;
+  const sinMapear = S.campos.filter(c => faltantes.some(f => f.k === c.k));
+
+  const intentarEnviar = () => {
+    const f = faltanRequeridos(v);
+    if (f.length) { setErrs(f); const i = SECCIONES.findIndex(s => s.campos.some(c => c.k === f[0].k)); setSec(i); return; }
+    setErrs([]); enviar({ ...borrador, valores: v, seccion: sec, actualizada: Date.now() });
+  };
+
+  return <main>
+    <div className="steps">{SECCIONES.map((s, i) => <b key={s.id} className={i < sec ? "done" : i === sec ? "now" : ""} />)}</div>
+    <h2>{S.titulo}</h2>
+    <p className="lead">Paso {sec + 1} de {SECCIONES.length} · se guarda solo mientras escribe</p>
+
+    {!!errs.length && <div className="note bad">Faltan campos obligatorios: {errs.map(e => e.et).join(", ")}.</div>}
+    {!!sinMapear.length && <div className="note">Estos campos no se encontraron en el formulario de Jotform y no se enviarán: {sinMapear.map(c => c.et).join(", ")}. Revise la pestaña Ajustes.</div>}
+
+    <div className="card">
+      {S.campos.map(c => <Campo key={c.k} c={c} valor={v[c.k]} set={val => set(c.k, val)} />)}
+    </div>
+
+    <div className="actions">
+      {sec > 0
+        ? <button className="btn" onClick={() => setSec(sec - 1)}>Atrás</button>
+        : <button className="btn ghost" onClick={cancelar}>Salir</button>}
+      {ultima
+        ? <button className="btn primary" onClick={intentarEnviar}>Enviar orden</button>
+        : <button className="btn primary" onClick={() => setSec(sec + 1)}>Siguiente</button>}
+    </div>
+    <button className="btn ghost block" style={{ marginTop: 10 }}
+      onClick={() => { guardar({ ...borrador, valores: v, seccion: sec, actualizada: Date.now() }); cancelar(); }}>
+      Guardar y continuar después
+    </button>
+  </main>;
+}
+
+function ListaBorradores({ borradores, abrir, borrar, nuevo }) {
+  return <main>
+    <h2>Borradores</h2>
+    <p className="lead">Órdenes sin terminar guardadas en este teléfono. Nada se pierde si cierra la app o se queda sin señal.</p>
+    <button className="btn primary block" style={{ marginBottom: 14 }} onClick={nuevo}>Nueva orden de trabajo</button>
+    {!borradores.length
+      ? <div className="empty">No hay borradores.<br />Empiece una orden y quedará aquí en cuanto escriba el primer dato.</div>
+      : borradores.map(b => {
+        const v = b.valores, pend = faltanRequeridos(v).length;
+        return <div className="item" key={b.id}>
+          <div className="body" onClick={() => abrir(b)} style={{ cursor: "pointer" }}>
+            <div className="t">{v.equipo || "Equipo sin capturar"}</div>
+            <div className="s">{v.unidad || "Unidad sin capturar"} · {v.inventario || "s/inv"}<br />Editado {fmtFecha(b.actualizada)}</div>
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 6, alignItems: "flex-end" }}>
+            <span className={"tag " + (pend ? "pend" : "ok")}>{pend ? pend + " pend." : "completa"}</span>
+            <button className="btn danger ghost" style={{ padding: "6px 10px", fontSize: 12 }} onClick={() => borrar(b.id)}>Eliminar</button>
+          </div>
+        </div>;
+      })}
+  </main>;
+}
+
+function ColaEnvio({ cola, reintentar, borrar, enviando }) {
+  return <main>
+    <h2>Por enviar</h2>
+    <p className="lead">Órdenes terminadas que esperan señal. Se reintentan solas al recuperar conexión.</p>
+    {!cola.length
+      ? <div className="empty">Nada en espera. Todo lo terminado ya está en Jotform.</div>
+      : <>
+        <button className="btn primary block" style={{ marginBottom: 14 }} disabled={enviando} onClick={reintentar}>
+          {enviando ? <><span className="spin" /> Enviando…</> : "Reintentar ahora"}
+        </button>
+        {cola.map(o => <div className="item" key={o.id}>
+          <div className="body">
+            <div className="t">{o.valores.equipo || "Equipo"}</div>
+            <div className="s">{o.valores.unidad || "—"} · {o.valores.inventario || "s/inv"}<br />
+              {o.error ? <span style={{ color: "var(--alert)" }}>{o.error}</span> : "En espera de conexión"}<br />
+              Intentos: {o.intentos || 0}</div>
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 6, alignItems: "flex-end" }}>
+            <span className={"tag " + (o.error ? "err" : "pend")}>{o.error ? "falló" : "en cola"}</span>
+            <button className="btn danger ghost" style={{ padding: "6px 10px", fontSize: 12 }} onClick={() => borrar(o.id)}>Quitar</button>
+          </div>
+        </div>)}
+      </>}
+  </main>;
+}
+
+function MisEnvios({ ingeniero, enviados, cargar, cargando, error }) {
+  const [abierta, setAbierta] = useState(null);
+  useEffect(() => { cargar(); }, []);
+  if (abierta) return <main>
+    <button className="btn ghost" onClick={() => setAbierta(null)} style={{ marginBottom: 12 }}>← Volver</button>
+    <h2>Envío {abierta.id}</h2>
+    <p className="lead">{new Date(abierta.created_at).toLocaleString("es-MX")}</p>
+    <div className="card"><div className="kv">
+      {abierta.respuestas.map((r, i) => <div key={i}><b>{r.pregunta}:</b> {r.valor}</div>)}
+    </div></div>
+  </main>;
+
+  return <main>
+    <h2>Mis envíos</h2>
+    <p className="lead">Órdenes registradas en Jotform a nombre de {ingeniero.split(" ")[0]}.</p>
+    <button className="btn ghost block" style={{ marginBottom: 14 }} onClick={cargar} disabled={cargando}>
+      {cargando ? <><span className="spin" /> Consultando…</> : "Actualizar"}</button>
+    {error && <div className="note bad">{error}</div>}
+    {!cargando && !enviados.length && !error && <div className="empty">Todavía no hay envíos a su nombre, o no hay conexión para consultarlos.</div>}
+    {enviados.map(s => <div className="item" key={s.id} onClick={() => setAbierta(s)} style={{ cursor: "pointer" }}>
+      <div className="body">
+        <div className="t">{s.equipo || "Equipo"}</div>
+        <div className="s">{s.folio ? s.folio + " · " : ""}{s.unidad || "—"} · {s.inventario || "s/inv"}<br />{new Date(s.created_at).toLocaleString("es-MX")}</div>
+      </div>
+      <span className="tag ok">enviada</span>
+    </div>)}
+  </main>;
+}
+
+function Ajustes({ ingeniero, salir, esquema, faltantes, mapa, recargar, estadoProxy }) {
+  const [prueba, setPrueba] = useState("");
+  const probar = async () => {
+    setPrueba("Probando…");
+    const url = CONFIG.PROXY_URL + "?action=ping&token=" + encodeURIComponent(CONFIG.TOKEN);
+    let t = "URL usada:\n" + url + "\n\n";
+    try {
+      const r = await fetch(url, { redirect: "follow" });
+      t += "fetch → HTTP " + r.status + "\n" + (await r.text()).slice(0, 200);
+    } catch (e) { t += "fetch → falló: " + e.message; }
+    t += "\n\n";
+    try { await Api.viaJsonp({ action: "ping" }); t += "jsonp → correcto"; }
+    catch (e) { t += "jsonp → falló: " + e.message; }
+    setPrueba(t);
+  };
+  return <main>
+    <h2>Ajustes</h2>
+    <p className="lead">Identidad, conexión y correspondencia de campos con el formulario de Jotform.</p>
+
+    <div className="card">
+      <div className="kv">
+        <div><b>Ingeniero:</b> {ingeniero}</div>
+        <div><b>Formulario:</b> {CONFIG.FORM_ID}</div>
+        <div><b>Versión de la app:</b> {CONFIG.BUILD || "Rev.01"}</div>
+        <div><b>Proxy en uso:</b> …{String(CONFIG.PROXY_URL).slice(-18)}</div>
+        <div><b>Estado del proxy:</b> {estadoProxy}</div>
+        <div><b>Almacenamiento:</b> {Store.modo}</div>
+        <div><b>Preguntas leídas:</b> {esquema ? Object.keys(esquema).length : 0}</div>
+      </div>
+      <div className="actions" style={{ marginTop: 12 }}>
+        <button className="btn" onClick={recargar}>Releer formulario</button>
+        <button className="btn ghost" onClick={salir}>Cambiar de ingeniero</button>
+      </div>
+      <button className="btn ghost block" style={{ marginTop: 10 }} onClick={probar}>Probar conexión</button>
+      {prueba && <pre style={{ marginTop: 10, whiteSpace: "pre-wrap", wordBreak: "break-all",
+        fontFamily: "var(--mono)", fontSize: 11, lineHeight: 1.6, color: "var(--muted)",
+        background: "#0E1217", border: "1px solid var(--line)", borderRadius: 8, padding: 10 }}>{prueba}</pre>}
+    </div>
+
+    <h2 style={{ marginTop: 20 }}>Correspondencia de campos</h2>
+    {faltantes.length
+      ? <div className="note bad">{faltantes.length} campo(s) sin localizar en el formulario: {faltantes.map(f => f.et).join(", ")}. Esos datos no se envían.</div>
+      : <div className="note">Los {Object.keys(mapa).length} campos de la app quedaron enlazados al formulario.</div>}
+    <div className="card"><div className="kv">
+      {TODOS.map(c => {
+        const m = mapa[c.k];
+        return <div key={c.k}><b>{c.et}</b> → {m ? `qid ${m.qid} · ${m.type.replace("control_", "")}` : <span style={{ color: "var(--alert)" }}>sin enlazar</span>}</div>;
+      })}
+    </div></div>
+  </main>;
+}
+
+/* ==========================================================
+   7. APP
+   ========================================================== */
+function App() {
+  const [listo, setListo] = useState(false);
+  const [ingeniero, setIngeniero] = useState("");
+  const [tab, setTab] = useState("borradores");
+  const [editando, setEditando] = useState(null);
+  const [borradores, setBorradores] = useState([]);
+  const [cola, setCola] = useState([]);
+  const [enviados, setEnviados] = useState([]);
+  const [esquema, setEsquema] = useState(null);
+  const [estadoProxy, setEstadoProxy] = useState("sin verificar");
+  const [online, setOnline] = useState(navigator.onLine);
+  const [enviando, setEnviando] = useState(false);
+  const [cargandoEnvios, setCargandoEnvios] = useState(false);
+  const [errEnvios, setErrEnvios] = useState("");
+  const [toast, setToast] = useState(null);
+
+  const { mapa, faltantes } = useMemo(() => esquema ? resolverMapa(esquema) : { mapa: {}, faltantes: TODOS }, [esquema]);
+
+  const avisar = (msg, malo) => { setToast({ msg, malo }); setTimeout(() => setToast(null), 3600); };
+
+  const refrescar = useCallback(async () => {
+    const [d, o] = await Promise.all([Store.all("drafts"), Store.all("outbox")]);
+    setBorradores(d.sort((a, b) => b.actualizada - a.actualizada));
+    setCola(o.sort((a, b) => a.creada - b.creada));
+  }, []);
+
+  const leerEsquema = useCallback(async (silencio) => {
+    try {
+      const d = await Api.get({ action: "schema" });
+      setEsquema(d.questions); setEstadoProxy("conectado");
+      await Store.put("meta", { id: "schema", questions: d.questions, ts: Date.now() });
+      if (!silencio) avisar("Formulario leído: " + Object.keys(d.questions).length + " preguntas");
+    } catch (e) {
+      setEstadoProxy("sin conexión: " + e.message);
+      const c = await Store.one("meta", "schema");
+      if (c) setEsquema(c.questions);
+      if (!silencio) avisar(e.message, true);
+    }
+  }, []);
+
+  useEffect(() => {
+    (async () => {
+      await Store.init();
+      const g = await Store.one("meta", "ingeniero");
+      if (g) setIngeniero(g.valor);
+      const c = await Store.one("meta", "schema");
+      if (c) setEsquema(c.questions);
+      await refrescar();
+      setListo(true);
+      leerEsquema(true);
+    })();
+    const on = () => setOnline(true), off = () => setOnline(false);
+    window.addEventListener("online", on); window.addEventListener("offline", off);
+    return () => { window.removeEventListener("online", on); window.removeEventListener("offline", off); };
+  }, []);
+
+  const elegirIngeniero = async n => { await Store.put("meta", { id: "ingeniero", valor: n }); setIngeniero(n); };
+
+  const guardarBorrador = async (b, silencio) => {
+    await Store.put("drafts", b);
+    if (!silencio) { await refrescar(); avisar("Borrador guardado"); }
+    else setBorradores(prev => { const o = prev.filter(x => x.id !== b.id); return [b, ...o]; });
+  };
+
+  const enviarUno = async o => {
+    const payload = construirPayload(o.valores, mapa);
+    const fotos = (o.valores.fotos || []).map(f => ({ nombre: f.nombre, dataUrl: f.dataUrl }));
+    const campoFotos = mapa.fotos ? mapa.fotos.qid : null;
+    const r = await Api.post({ action: "submit", answers: payload, fotos, campoFotos, cliente: o.id });
+    return r;
+  };
+
+  const procesarCola = useCallback(async (manual) => {
+    if (enviando) return;
+    const pend = await Store.all("outbox");
+    if (!pend.length) { if (manual) avisar("No hay nada por enviar"); return; }
+    if (!esquema) { if (manual) avisar("Primero hay que leer el formulario (Ajustes)", true); return; }
+    setEnviando(true);
+    let ok = 0, fail = 0; const avisos = [];
+    for (const o of pend.sort((a, b) => a.creada - b.creada)) {
+      try {
+        const r = await enviarUno(o);
+        await Store.del("outbox", o.id);
+        await Store.put("sent", { id: o.id, submissionID: r.submissionID, valores: o.valores, ts: Date.now() });
+        if (r.aviso) avisos.push(r.aviso);
+        ok++;
+      } catch (e) {
+        await Store.put("outbox", { ...o, intentos: (o.intentos || 0) + 1, error: e.message });
+        fail++;
+      }
+    }
+    setEnviando(false); await refrescar();
+    if (avisos.length) avisar(avisos[0], true);
+    else if (ok && !fail) avisar(ok === 1 ? "Orden enviada a Jotform" : ok + " órdenes enviadas");
+    else if (ok && fail) avisar(`${ok} enviada(s), ${fail} sigue(n) en cola`, true);
+    else if (fail) avisar("No se pudo enviar. Queda en cola.", true);
+  }, [enviando, esquema, mapa, refrescar]);
+
+  useEffect(() => { if (online && listo && esquema) procesarCola(false); }, [online, listo, esquema]);
+
+  const encolar = async b => {
+    await Store.put("outbox", { ...b, creada: Date.now(), intentos: 0, error: "" });
+    await Store.del("drafts", b.id);
+    setEditando(null); setTab("cola"); await refrescar();
+    procesarCola(false);
+  };
+
+  const cargarEnvios = useCallback(async () => {
+    setCargandoEnvios(true); setErrEnvios("");
+    try {
+      const d = await Api.get({ action: "submissions", ingeniero, limit: 40 });
+      setEnviados(d.items || []);
+      await Store.put("meta", { id: "envios:" + ingeniero, items: d.items, ts: Date.now() });
+    } catch (e) {
+      const c = await Store.one("meta", "envios:" + ingeniero);
+      if (c) { setEnviados(c.items || []); setErrEnvios("Sin conexión. Mostrando la última consulta guardada."); }
+      else setErrEnvios("No se pudo consultar: " + e.message);
+    }
+    setCargandoEnvios(false);
+  }, [ingeniero]);
+
+  if (!listo) return <div className="center"><span className="spin" /></div>;
+  if (!ingeniero) return <Identificacion onListo={elegirIngeniero} />;
+
+  const misBorradores = borradores.filter(b => !b.valores.ingeniero || b.valores.ingeniero === ingeniero);
+
+  return <>
+    <header className="readout">
+      <div className="readout-top">
+        <img src="icon-192.png" alt="" width="26" height="26"
+          style={{ borderRadius: 5, background: "#fff", flexShrink: 0 }} />
+        <div className="brand">Orden de <span>Trabajo</span></div>
+        <div className="who">{ingeniero.split(" ").slice(0, 2).join(" ")}<br />IA Biomédica</div>
+      </div>
+      <div className="strip">
+        <div className="cell"><b className={online ? "on" : "off"}>{online ? "EN LÍNEA" : "SIN SEÑAL"}</b><i>conexión</i></div>
+        <div className="cell"><b>{misBorradores.length}</b><i>borradores</i></div>
+        <div className="cell"><b className={cola.length ? "wait" : ""}>{cola.length}</b><i>por enviar</i></div>
+        <div className="cell"><b className={esquema ? "on" : "off"}>{esquema ? "OK" : "—"}</b><i>formulario</i></div>
+      </div>
+    </header>
+
+    {editando
+      ? <Formulario borrador={editando} mapa={mapa} faltantes={faltantes}
+          guardar={guardarBorrador} enviar={encolar} cancelar={() => { setEditando(null); refrescar(); }} />
+      : tab === "borradores" ? <ListaBorradores borradores={misBorradores}
+          abrir={b => setEditando(b)} nuevo={() => setEditando(nuevaOrden(ingeniero))}
+          borrar={async id => { await Store.del("drafts", id); await refrescar(); avisar("Borrador eliminado"); }} />
+      : tab === "cola" ? <ColaEnvio cola={cola} enviando={enviando} reintentar={() => procesarCola(true)}
+          borrar={async id => { const o = await Store.one("outbox", id); await Store.del("outbox", id); if (o) await Store.put("drafts", { ...o, actualizada: Date.now() }); await refrescar(); avisar("Regresó a borradores"); }} />
+      : tab === "envios" ? <MisEnvios ingeniero={ingeniero} enviados={enviados} cargar={cargarEnvios} cargando={cargandoEnvios} error={errEnvios} />
+      : <Ajustes ingeniero={ingeniero} esquema={esquema} mapa={mapa} faltantes={faltantes}
+          estadoProxy={estadoProxy} recargar={() => leerEsquema(false)}
+          salir={async () => { await Store.del("meta", "ingeniero"); setIngeniero(""); }} />}
+
+    {toast && <div className={"toast" + (toast.malo ? " bad" : "")}>{toast.msg}</div>}
+
+    {!editando && <nav className="tabs">
+      {[["borradores", "▤", "Borradores"], ["cola", "⇧", "Por enviar"], ["envios", "✓", "Mis envíos"], ["ajustes", "⚙", "Ajustes"]].map(([k, ic, et]) =>
+        <button key={k} aria-current={tab === k ? "page" : undefined} onClick={() => setTab(k)}>
+          <span className="ic">{ic}</span>{et}
+          {k === "cola" && cola.length > 0 && <span className="badge">{cola.length}</span>}
+        </button>)}
+    </nav>}
+  </>;
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+
+if ("serviceWorker" in navigator && location.protocol === "https:") {
+  window.addEventListener("load", () => navigator.serviceWorker.register("sw.js").catch(() => {}));
+}
+</script>
+</body>
+</html>
