@@ -121,16 +121,22 @@ table.med input{padding:9px 8px;font-size:14px}
 
 /* --- Barra inferior --- */
 nav.tabs{position:fixed;left:0;right:0;bottom:0;z-index:50;background:rgba(9,32,54,.97);border-top:1px solid var(--line);display:flex;padding-bottom:var(--safe-b);backdrop-filter:blur(8px)}
-nav.tabs button{flex:1;background:none;border:0;padding:10px 4px 11px;color:var(--muted);display:flex;flex-direction:column;align-items:center;gap:4px;font-size:10px;letter-spacing:.07em;text-transform:uppercase;cursor:pointer;font-weight:600;position:relative}
+nav.tabs button{flex:1;background:none;border:0;padding:10px 2px 11px;color:var(--muted);display:flex;flex-direction:column;align-items:center;gap:4px;font-size:9.5px;letter-spacing:.07em;text-transform:uppercase;cursor:pointer;font-weight:600;position:relative}
 nav.tabs button[aria-current=page]{color:var(--amber)}
 nav.tabs .ic{font-size:17px;line-height:1}
-nav.tabs .badge{position:absolute;top:5px;right:calc(50% - 22px);background:var(--alert);color:#06182A;border-radius:999px;font-size:9px;padding:1px 5px;font-weight:700}
+nav.tabs .badge{position:absolute;top:5px;right:calc(50% - 20px);background:var(--alert);color:#06182A;border-radius:999px;font-size:9px;padding:1px 5px;font-weight:700}
 
 /* --- Aviso --- */
 .note{border-left:2px solid var(--amber);background:#0F2D45;padding:10px 12px;border-radius:0 8px 8px 0;font-size:13px;line-height:1.5;margin-bottom:12px;color:#D7EEFA}
 .note.bad{border-color:var(--alert);background:#2B1A18;color:#F8D8D2}
 .toast{position:fixed;left:14px;right:14px;bottom:calc(84px + var(--safe-b));z-index:60;background:var(--panel-2);border:1px solid var(--line);border-left:3px solid var(--mint);border-radius:8px;padding:12px 14px;font-size:13.5px;box-shadow:0 10px 30px rgba(0,0,0,.5)}
 .toast.bad{border-left-color:var(--alert)}
+.aviso{background:var(--panel);border:1px solid var(--line);border-left:3px solid var(--amber);border-radius:var(--radius);padding:13px 14px;margin-bottom:10px}
+.aviso.mantenimiento{border-left-color:var(--mint)}
+.aviso.urgente{border-left-color:var(--alert)}
+.aviso h3{margin:0 0 5px;font-size:15px;font-weight:600;line-height:1.3}
+.aviso p{margin:0;font-size:13.5px;line-height:1.55;color:#C6DCEC;white-space:pre-wrap}
+.aviso .meta{margin-top:9px;font-family:var(--mono);font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
 .kv{font-family:var(--mono);font-size:12px;line-height:1.7;color:var(--muted);word-break:break-word}
 .kv b{color:var(--text);font-weight:600}
 .spin{display:inline-block;width:14px;height:14px;border:2px solid rgba(255,255,255,.25);border-top-color:var(--amber);border-radius:50%;animation:sp .7s linear infinite}
@@ -151,7 +157,7 @@ window.CONFIG = {
   // Token compartido: debe ser idéntico al del Apps Script
   TOKEN: "aiiPlCWrNHmMcqLQRrj9RK2QVnqfxSMzPYISzJ88dXNjB8Ys",
   FORM_ID: "260445478825062",
-  BUILD: "Rev.14"
+  BUILD: "Rev.15"
 };
 </script>
 
@@ -658,21 +664,20 @@ function Formulario({ borrador, guardar, enviar, cancelar, mapa, faltantes }) {
     </div>
 
     <div className="actions">
-      {sec > 0
-        ? <button className="btn" onClick={() => setSec(sec - 1)}>Atrás</button>
-        : <button className="btn ghost" onClick={cancelar}>Salir</button>}
+      {sec > 0 && <button className="btn" onClick={() => setSec(sec - 1)}>Atrás</button>}
       {ultima
         ? <button className="btn primary" onClick={intentarEnviar}>Enviar orden</button>
         : <button className="btn primary" onClick={() => setSec(sec + 1)}>Siguiente</button>}
     </div>
+    {/* Salir está disponible en cualquier paso: lo capturado ya quedó guardado */}
     <button className="btn ghost block" style={{ marginTop: 10 }}
       onClick={() => { guardar({ ...borrador, valores: v, seccion: sec, actualizada: Date.now() }); cancelar(); }}>
-      Guardar y continuar después
+      Salir y continuar después
     </button>
   </main>;
 }
 
-function ListaBorradores({ borradores, abrir, borrar, nuevo, mapa }) {
+function ListaBorradores({ borradores, abrir, borrar, nuevo, mapa, enviar }) {
   return <main>
     <h2>Borradores</h2>
     <p className="lead">Órdenes sin terminar guardadas en este teléfono. Nada se pierde si cierra la app o se queda sin señal.</p>
@@ -681,15 +686,20 @@ function ListaBorradores({ borradores, abrir, borrar, nuevo, mapa }) {
       ? <div className="empty">No hay borradores.<br />Empiece una orden y quedará aquí en cuanto escriba el primer dato.</div>
       : borradores.map(b => {
         const v = b.valores, pend = faltanRequeridos(v, mapa).length;
-        return <div className="item" key={b.id}>
-          <div className="body" onClick={() => abrir(b)} style={{ cursor: "pointer" }}>
-            <div className="t">{v.equipo || "Equipo sin capturar"}</div>
-            <div className="s">{v.unidad || "Unidad sin capturar"} · {v.inventario || "s/inv"}<br />Editado {fmtFecha(b.actualizada)}</div>
+        return <div className="item" key={b.id} style={{ flexDirection: "column", alignItems: "stretch" }}>
+          <div style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
+            <div className="body" onClick={() => abrir(b)} style={{ cursor: "pointer" }}>
+              <div className="t">{v.equipo || "Equipo sin capturar"}</div>
+              <div className="s">{v.unidad || "Unidad sin capturar"} · {v.inventario || "s/inv"}<br />Editado {fmtFecha(b.actualizada)}</div>
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 6, alignItems: "flex-end" }}>
+              <span className={"tag " + (pend ? "pend" : "ok")}>{pend ? pend + " pend." : "lista"}</span>
+              <button className="btn danger ghost" style={{ padding: "6px 10px", fontSize: 12 }} onClick={() => borrar(b.id)}>Eliminar</button>
+            </div>
           </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 6, alignItems: "flex-end" }}>
-            <span className={"tag " + (pend ? "pend" : "ok")}>{pend ? pend + " pend." : "completa"}</span>
-            <button className="btn danger ghost" style={{ padding: "6px 10px", fontSize: 12 }} onClick={() => borrar(b.id)}>Eliminar</button>
-          </div>
+          {/* Una orden completa se puede mandar sin volver a abrirla paso por paso */}
+          {!pend && <button className="btn primary block" style={{ marginTop: 10 }}
+            onClick={() => enviar(b)}>Enviar esta orden</button>}
         </div>;
       })}
   </main>;
@@ -844,6 +854,29 @@ function MisEnvios({ ingeniero, enviados, cargar, cargando, error }) {
   </main>;
 }
 
+function Avisos({ ingeniero, avisos, cargar, cargando, error }) {
+  useEffect(() => { cargar(); }, []);
+  return <main>
+    <h2>Avisos</h2>
+    <p className="lead">Comunicados y asignaciones para {ingeniero.split(" ")[0]}.</p>
+    <button className="btn ghost block" style={{ marginBottom: 14 }} onClick={cargar} disabled={cargando}>
+      {cargando ? <><span className="spin" /> Consultando…</> : "Actualizar"}</button>
+
+    {error && <div className="note bad">{error}</div>}
+    {!cargando && !avisos.length && !error &&
+      <div className="empty">No hay avisos por ahora.</div>}
+
+    {avisos.map(a => <div className={"aviso " + (a.tipo || "informativo")} key={a.id}>
+      <h3>{a.titulo || "Aviso"}</h3>
+      {a.mensaje && <p>{a.mensaje}</p>}
+      <div className="meta">
+        {a.fecha ? new Date(a.fecha).toLocaleDateString("es-MX", { day: "2-digit", month: "long", year: "numeric" }) : ""}
+        {a.paraTodos ? " · para todo el equipo" : " · personal"}
+      </div>
+    </div>)}
+  </main>;
+}
+
 function Ajustes({ ingeniero, salir, esquema, faltantes, mapa, recargar, estadoProxy, ultimaRevision }) {
   const [prueba, setPrueba] = useState(null);
   const probar = async () => {
@@ -935,6 +968,10 @@ function App() {
   const [errEnvios, setErrEnvios] = useState("");
   const [toast, setToast] = useState(null);
   const [ultimaRevision, setUltimaRevision] = useState(0);
+  const [avisos, setAvisos] = useState([]);
+  const [cargandoAvisos, setCargandoAvisos] = useState(false);
+  const [errAvisos, setErrAvisos] = useState("");
+  const [avisosVistos, setAvisosVistos] = useState(0);
 
   const { mapa, faltantes } = useMemo(() => esquema ? resolverMapa(esquema) : { mapa: {}, faltantes: TODOS }, [esquema]);
 
@@ -967,6 +1004,12 @@ function App() {
       if (g) setIngeniero(g.valor);
       const c = await Store.one("meta", "schema");
       if (c) setEsquema(c.questions);
+      const vistos = await Store.one("meta", "avisosVistos");
+      if (vistos) setAvisosVistos(vistos.ts || 0);
+      if (g) {
+        const guardados = await Store.one("meta", "avisos:" + g.valor);
+        if (guardados) setAvisos(guardados.items || []);
+      }
       await refrescar();
       setListo(true);
       leerEsquema(true);
@@ -981,7 +1024,7 @@ function App() {
   // ingeniero intente enviar, y no en el momento de enviar.
   useEffect(() => {
     if (!listo || !ingeniero) return;
-    const revisar = () => { if (navigator.onLine) leerEsquema(true); };
+    const revisar = () => { if (navigator.onLine) { leerEsquema(true); cargarAvisos(); } };
     const reloj = setInterval(revisar, 10 * 60 * 1000);
     const alVolver = () => { if (document.visibilityState === "visible") revisar(); };
     document.addEventListener("visibilitychange", alVolver);
@@ -991,7 +1034,7 @@ function App() {
       document.removeEventListener("visibilitychange", alVolver);
       window.removeEventListener("online", revisar);
     };
-  }, [listo, ingeniero, leerEsquema]);
+  }, [listo, ingeniero, leerEsquema, cargarAvisos]);
 
   const elegirIngeniero = async n => { await Store.put("meta", { id: "ingeniero", valor: n }); setIngeniero(n); };
 
@@ -1044,6 +1087,20 @@ function App() {
     procesarCola(false);
   };
 
+  const cargarAvisos = useCallback(async () => {
+    setCargandoAvisos(true); setErrAvisos("");
+    try {
+      const d = await Api.get({ action: "avisos", ingeniero });
+      setAvisos(d.avisos || []);
+      await Store.put("meta", { id: "avisos:" + ingeniero, items: d.avisos, ts: Date.now() });
+    } catch (e) {
+      const c = await Store.one("meta", "avisos:" + ingeniero);
+      if (c) { setAvisos(c.items || []); setErrAvisos("Sin conexión. Se muestran los últimos avisos guardados."); }
+      else setErrAvisos("No se pudieron consultar los avisos: " + e.message);
+    }
+    setCargandoAvisos(false);
+  }, [ingeniero]);
+
   const cargarEnvios = useCallback(async () => {
     setCargandoEnvios(true); setErrEnvios("");
     try {
@@ -1060,6 +1117,14 @@ function App() {
 
   if (!listo) return <div className="center"><span className="spin" /></div>;
   if (!ingeniero) return <Identificacion onListo={elegirIngeniero} mapa={mapa} />;
+
+  const avisosNuevos = avisos.filter(a => a.fecha && new Date(a.fecha).getTime() > avisosVistos).length;
+  const verAvisos = async () => {
+    setTab("avisos");
+    const ahora = Date.now();
+    setAvisosVistos(ahora);
+    await Store.put("meta", { id: "avisosVistos", ts: ahora });
+  };
 
   const misBorradores = borradores.filter(b => !b.valores.ingeniero || b.valores.ingeniero === ingeniero);
 
@@ -1086,12 +1151,13 @@ function App() {
     {editando
       ? <Formulario borrador={editando} mapa={mapa} faltantes={faltantes}
           guardar={guardarBorrador} enviar={encolar} cancelar={() => { setEditando(null); refrescar(); }} />
-      : tab === "borradores" ? <ListaBorradores borradores={misBorradores} mapa={mapa}
+      : tab === "borradores" ? <ListaBorradores borradores={misBorradores} mapa={mapa} enviar={encolar}
           abrir={b => setEditando(b)} nuevo={() => setEditando(nuevaOrden(ingeniero))}
           borrar={async id => { await Store.del("drafts", id); await refrescar(); avisar("Borrador eliminado"); }} />
       : tab === "cola" ? <ColaEnvio cola={cola} enviando={enviando} reintentar={() => procesarCola(true)}
           borrar={async id => { const o = await Store.one("outbox", id); await Store.del("outbox", id); if (o) await Store.put("drafts", { ...o, actualizada: Date.now() }); await refrescar(); avisar("Regresó a borradores"); }} />
       : tab === "envios" ? <MisEnvios ingeniero={ingeniero} enviados={enviados} cargar={cargarEnvios} cargando={cargandoEnvios} error={errEnvios} />
+      : tab === "avisos" ? <Avisos ingeniero={ingeniero} avisos={avisos} cargar={cargarAvisos} cargando={cargandoAvisos} error={errAvisos} />
       : <Ajustes ingeniero={ingeniero} esquema={esquema} mapa={mapa} faltantes={faltantes}
           estadoProxy={estadoProxy} ultimaRevision={ultimaRevision} recargar={() => leerEsquema(false)}
           salir={async () => { await Store.del("meta", "ingeniero"); setIngeniero(""); }} />}
@@ -1099,10 +1165,13 @@ function App() {
     {toast && <div className={"toast" + (toast.malo ? " bad" : "")}>{toast.msg}</div>}
 
     {!editando && <nav className="tabs">
-      {[["borradores", "▤", "Borradores"], ["cola", "⇧", "Por enviar"], ["envios", "✓", "Mis envíos"], ["ajustes", "⚙", "Ajustes"]].map(([k, ic, et]) =>
-        <button key={k} aria-current={tab === k ? "page" : undefined} onClick={() => setTab(k)}>
+      {[["borradores", "▤", "Borradores"], ["cola", "⇧", "Por enviar"], ["envios", "✓", "Mis envíos"],
+        ["avisos", "⚑", "Avisos"], ["ajustes", "⚙", "Ajustes"]].map(([k, ic, et]) =>
+        <button key={k} aria-current={tab === k ? "page" : undefined}
+          onClick={() => k === "avisos" ? verAvisos() : setTab(k)}>
           <span className="ic">{ic}</span>{et}
           {k === "cola" && cola.length > 0 && <span className="badge">{cola.length}</span>}
+          {k === "avisos" && avisosNuevos > 0 && <span className="badge">{avisosNuevos}</span>}
         </button>)}
     </nav>}
   </>;
