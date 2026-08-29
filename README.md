@@ -4,7 +4,7 @@ App web instalable (PWA) para capturar el formulario de Jotform
 `Orden de Trabajo` (ID **260445478825062**) desde el celular, por pasos, con
 borradores locales, cola de envío sin señal y consulta del histórico propio.
 
-**Versión actual: Rev.10** (app) · caché `ot-ia-v10` (service worker).
+**Versión actual: Rev.11** (app) · caché `ot-ia-v11` (service worker).
 
 ---
 
@@ -175,7 +175,7 @@ JSONP por sí solo no importa: es el respaldo, y solo entra si una red bloquea e
 
 ## 8. Al publicar cambios
 
-1. Subir el `sw.js` con el número de caché aumentado (`ot-ia-v10` → `ot-ia-v11`).
+1. Subir el `sw.js` con el número de caché aumentado (`ot-ia-v11` → `ot-ia-v12`).
 2. Reimplementar el Apps Script con **Nueva versión** si se tocó `Codigo.gs`.
 3. Si el icono cambió, desinstalar la app del celular y volver a agregarla: Android
    guarda el icono al instalar y no lo actualiza solo.

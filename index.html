@@ -147,11 +147,11 @@ nav.tabs .badge{position:absolute;top:5px;right:calc(50% - 22px);background:var(
    ========================================================== */
 window.CONFIG = {
   // URL de la implementación del Apps Script (termina en /exec)
-  PROXY_URL: "https://script.google.com/macros/s/AKfycbw2nV9hEZvzPSIDlCPyHOgjB3JaAK2jkAAQ4aQHFciCUFrcXzPVtgNwPUKrNm9BKMQb/exec",
+  PROXY_URL: "https://script.google.com/macros/s/PEGAR_ID_DE_IMPLEMENTACION/exec",
   // Token compartido: debe ser idéntico al del Apps Script
-  TOKEN: "aiiPlCWrNHmMcqLQRrj9RK2QVnqfxSMzPYISzJ88dXNjB8Ys",
+  TOKEN: "CAMBIAR-ESTE-TOKEN",
   FORM_ID: "260445478825062",
-  BUILD: "Rev.10"
+  BUILD: "Rev.11"
 };
 </script>
 
@@ -284,7 +284,7 @@ const Api = {
    el qid real se resuelve contra el esquema descargado.
    ========================================================== */
 const ESTADOS = ["Aguascalientes","Baja California","Baja California Sur","Campeche","Chiapas","Chihuahua","Ciudad de México","Coahuila","Colima","Durango","Estado de México","Guanajuato","Guerrero","Hidalgo","Jalisco","Michoacán","Morelos","Nayarit","Nuevo León","Oaxaca","Puebla","Querétaro","Quintana Roo","San Luis Potosí","Sinaloa","Sonora","Tabasco","Tamaulipas","Tlaxcala","Veracruz","Yucatán","Zacatecas"];
-const INGENIEROS = ["Arturo Maldonado Martínez","Daniel Cortez Perez","Daniela Trejo Maqueda","Edson Alfonso Corona Dávalos","Erick Geovanni Serrano Espíndola","Joaquín García Rojel","Martín Parra Chino","Proyectos IA Biomédica"];
+const INGENIEROS = ["Arturo Maldonado Martínez","Daniel Cortez Perez","Daniela Trejo Maqueda","Edson Alfonso Corona Dávalos","Erick Geovanni Serrano Espíndola","Joaquín García Rojel","Martín Parra Chino"];
 
 const SECCIONES = [
 { id:"fecha", titulo:"Fecha de servicio", campos:[
@@ -323,7 +323,7 @@ const SECCIONES = [
   { k:"equipoCalOtro", et:"Otro equipo de calibración", tipo:"texto", m:{ label:"OTRO:", nth:4 } },
   { k:"documentacion", et:"Documentación generada y anexada", tipo:"checks", m:{ label:"DOCUMENTACIÓN GENERADA Y ANEXADA" },
     opciones:["RUTINA DE MANTENIMIENTO","RESULTADO DE CALIBRACIÓN","CERTIFICADO EMA"] },
-  { k:"certAnio", et:"Certificado de calibración vigente, año", tipo:"select", opciones:["2024","2025","2026"], m:{ prefijo:"CERTIFICADO DE CALIBRACIÓN VIGENTE" } },
+  { k:"certAnio", et:"Certificado de calibración vigente, año", tipo:"select", req:true, opciones:["2024","2025","2026"], m:{ prefijo:"CERTIFICADO DE CALIBRACIÓN VIGENTE" } },
   { k:"documentacionOtro", et:"Otra documentación", tipo:"texto", m:{ label:"OTROS:" } },
 ]},
 { id:"descripcion", titulo:"Descripción del servicio", campos:[
@@ -344,7 +344,7 @@ const SECCIONES = [
   { k:"observaciones", et:"Observaciones", tipo:"area", m:{ label:"OBSERVACIONES:" } },
 ]},
 { id:"firmas", titulo:"Evidencia y firmas", campos:[
-  { k:"fotos", et:"Evidencia fotográfica", tipo:"fotos", m:{ label:"Carga de archivo" } },
+  { k:"fotos", et:"Evidencia fotográfica", tipo:"fotos", req:true, m:{ label:"Carga de archivo" } },
   { k:"ingeniero", et:"Ingeniero de servicio", tipo:"select", req:true, opciones:INGENIEROS, m:{ label:"INGENIERO DE SERVICIO:" } },
   { k:"firmaIng", et:"Firma del ingeniero", tipo:"firma", req:true, m:{ label:"Firma", nth:1 } },
   { k:"responsable", et:"Responsable de área", tipo:"texto", m:{ label:"RESPONSABLE DE AREA" } },
@@ -426,8 +426,9 @@ function faltanRequeridos(valores) {
   return TODOS.filter(c => {
     if (!c.req) return false;
     const v = valores[c.k];
-    if (c.tipo === "checks") return !v || !v.length;
+    if (c.tipo === "checks" || c.tipo === "fotos") return !v || !v.length;
     if (c.tipo === "datetime") return !v || !v.fecha;
+    if (c.tipo === "tabla") return !v || !v.filter(r => r.m || r.prog || r.desp || r.med).length;
     return !v;
   });
 }
