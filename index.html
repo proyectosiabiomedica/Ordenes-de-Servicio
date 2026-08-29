@@ -151,7 +151,7 @@ window.CONFIG = {
   // Token compartido: debe ser idéntico al del Apps Script
   TOKEN: "aiiPlCWrNHmMcqLQRrj9RK2QVnqfxSMzPYISzJ88dXNjB8Ys",
   FORM_ID: "260445478825062",
-  BUILD: "Rev.12"
+  BUILD: "Rev.13"
 };
 </script>
 
@@ -398,7 +398,8 @@ function resolverMapa(preguntas) {
     }
     const q = cand[(c.m.nth || 1) - 1];
     if (q) mapa[c.k] = { qid: q.qid, type: q.type, name: q.name, text: q.text,
-      timeFormat: q.timeFormat, obligatorio: String(q.required) === "Yes" };
+      timeFormat: q.timeFormat, obligatorio: String(q.required) === "Yes",
+      opciones: String(q.options || "").split("|").map(o => o.trim()).filter(Boolean) };
     else faltantes.push(c);
   });
   return { mapa, faltantes };
@@ -433,7 +434,13 @@ function faltanRequeridos(valores, mapa) {
     if (c.tipo === "checks" || c.tipo === "fotos") return !v || !v.length;
     if (c.tipo === "datetime") return !v || !v.fecha;
     if (c.tipo === "tabla") return !v || !v.filter(r => r.m || r.prog || r.desp || r.med).length;
-    return !v;
+    if (!v) return true;
+    // Una opción que ya no existe en el formulario equivale a campo vacío:
+    // Jotform la rechaza con "Incomplete Values".
+    if (c.tipo === "select" && mapa && mapa[c.k] && mapa[c.k].opciones && mapa[c.k].opciones.length) {
+      return mapa[c.k].opciones.indexOf(v) === -1;
+    }
+    return false;
   });
 }
 
@@ -454,7 +461,7 @@ function Etiqueta({ c, obligatorio }) {
   return <span className="lb">{c.et}{(c.req || obligatorio) && <em> *</em>}</span>;
 }
 
-function Campo({ c, valor, set, obligatorio }) {
+function Campo({ c, valor, set, obligatorio, opciones }) {
   if (c.tipo === "texto" || c.tipo === "tel" || c.tipo === "email")
     return <label className="f"><Etiqueta c={c} obligatorio={obligatorio} />
       <input type={c.tipo === "texto" ? "text" : c.tipo} value={valor || ""} onChange={e => set(e.target.value)}
@@ -463,12 +470,18 @@ function Campo({ c, valor, set, obligatorio }) {
   if (c.tipo === "area")
     return <label className="f"><Etiqueta c={c} obligatorio={obligatorio} /><textarea value={valor || ""} onChange={e => set(e.target.value)} /></label>;
 
-  if (c.tipo === "select")
+  if (c.tipo === "select") {
+    const ops = (opciones && opciones.length) ? opciones : c.opciones;
+    const invalido = valor && ops.indexOf(valor) === -1;
     return <label className="f"><Etiqueta c={c} obligatorio={obligatorio} />
-      <select value={valor || ""} onChange={e => set(e.target.value)}>
+      <select value={invalido ? "" : (valor || "")} onChange={e => set(e.target.value)}>
         <option value="">Seleccione</option>
-        {c.opciones.map(o => <option key={o} value={o}>{o}</option>)}
-      </select></label>;
+        {ops.map(o => <option key={o} value={o}>{o}</option>)}
+      </select>
+      {invalido && <span style={{ display: "block", marginTop: 6, fontSize: 12, color: "var(--alert)" }}>
+        "{valor}" ya no es una opción válida del formulario. Elija una de la lista.
+      </span>}</label>;
+  }
 
   if (c.tipo === "datetime") {
     const v = valor || { fecha: "", hora: "" };
@@ -573,8 +586,10 @@ function FotosCampo({ c, valor, set, obligatorio }) {
 /* ==========================================================
    6. PANTALLAS
    ========================================================== */
-function Identificacion({ onListo }) {
+function Identificacion({ onListo, mapa }) {
   const [n, setN] = useState("");
+  const lista = (mapa && mapa.ingeniero && mapa.ingeniero.opciones && mapa.ingeniero.opciones.length)
+    ? mapa.ingeniero.opciones : INGENIEROS;
   return <main>
     <div className="center">
       <div style={{ letterSpacing: ".2em", fontSize: 12, color: "#8C99A6", textTransform: "uppercase" }}>Ingenieros Asociados</div>
@@ -583,7 +598,7 @@ function Identificacion({ onListo }) {
       <div style={{ width: "100%", maxWidth: 380 }}>
         <select value={n} onChange={e => setN(e.target.value)}>
           <option value="">Seleccione ingeniero</option>
-          {INGENIEROS.map(i => <option key={i} value={i}>{i}</option>)}
+          {lista.map(i => <option key={i} value={i}>{i}</option>)}
         </select>
         <button className="btn primary block" style={{ marginTop: 12 }} disabled={!n} onClick={() => onListo(n)}>Entrar</button>
       </div>
@@ -626,7 +641,8 @@ function Formulario({ borrador, guardar, enviar, cancelar, mapa, faltantes }) {
 
     <div className="card">
       {S.campos.map(c => <Campo key={c.k} c={c} valor={v[c.k]} set={val => set(c.k, val)}
-        obligatorio={!!(mapa[c.k] && mapa[c.k].obligatorio)} />)}
+        obligatorio={!!(mapa[c.k] && mapa[c.k].obligatorio)}
+        opciones={mapa[c.k] && mapa[c.k].opciones} />)}
     </div>
 
     <div className="actions">
@@ -1031,7 +1047,7 @@ function App() {
   }, [ingeniero]);
 
   if (!listo) return <div className="center"><span className="spin" /></div>;
-  if (!ingeniero) return <Identificacion onListo={elegirIngeniero} />;
+  if (!ingeniero) return <Identificacion onListo={elegirIngeniero} mapa={mapa} />;
 
   const misBorradores = borradores.filter(b => !b.valores.ingeniero || b.valores.ingeniero === ingeniero);
 
