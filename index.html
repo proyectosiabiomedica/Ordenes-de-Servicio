@@ -145,7 +145,34 @@ nav.tabs .badge{position:absolute;top:5px;right:calc(50% - 20px);background:var(
 </style>
 </head>
 <body>
-<div id="root"><div class="center"><span class="spin"></span><span style="color:#8C99A6;font-size:13px">Cargando…</span></div></div>
+<div id="root"><div class="center"><span class="spin"></span><span style="color:#8FAAC4;font-size:13px">Cargando…</span></div></div>
+
+<script>
+/* Si algo falla al arrancar, mostrarlo en pantalla. Sin esto la app queda en
+   negro y no hay forma de saber qué pasó desde el celular. */
+(function () {
+  var mostrado = false;
+  function avisar(msg) {
+    if (mostrado) return; mostrado = true;
+    var r = document.getElementById("root");
+    if (!r) return;
+    r.innerHTML = '<div style="padding:24px;font-family:-apple-system,Segoe UI,Roboto,sans-serif;color:#EAF4FB">' +
+      '<div style="font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:#FF7A68;margin-bottom:8px">' +
+      'La app no pudo abrir</div>' +
+      '<pre style="white-space:pre-wrap;word-break:break-word;font-size:12px;line-height:1.6;color:#8FAAC4;' +
+      'background:#0D2740;border:1px solid #1D4870;border-radius:8px;padding:12px">' +
+      String(msg).replace(/</g, "&lt;") + '</pre>' +
+      '<p style="font-size:13.5px;line-height:1.55;color:#8FAAC4">Cierre y vuelva a abrir. Si sigue igual, ' +
+      'borre los datos del sitio desde el navegador para descargar la versión más reciente.</p></div>';
+  }
+  window.addEventListener("error", function (e) { avisar((e.message || "Error") + (e.filename ? "\n" + e.filename + ":" + e.lineno : "")); });
+  window.addEventListener("unhandledrejection", function (e) { avisar(e.reason && e.reason.message || e.reason || "Error"); });
+  setTimeout(function () {
+    var r = document.getElementById("root");
+    if (r && r.querySelector(".spin") && !window.__appLista) avisar("La app tardó demasiado en cargar. Puede ser que las librerías no estén en caché y no haya conexión.");
+  }, 20000);
+})();
+</script>
 
 <script>
 /* ==========================================================
@@ -157,7 +184,7 @@ window.CONFIG = {
   // Token compartido: debe ser idéntico al del Apps Script
   TOKEN: "aiiPlCWrNHmMcqLQRrj9RK2QVnqfxSMzPYISzJ88dXNjB8Ys",
   FORM_ID: "260445478825062",
-  BUILD: "Rev.15"
+  BUILD: "Rev.16"
 };
 </script>
 
@@ -1019,22 +1046,6 @@ function App() {
     return () => { window.removeEventListener("online", on); window.removeEventListener("offline", off); };
   }, []);
 
-  // Revisión periódica: relee el formulario cada 10 minutos y al volver a la app.
-  // Así el mapeo de campos y el estado del proxy se verifican antes de que un
-  // ingeniero intente enviar, y no en el momento de enviar.
-  useEffect(() => {
-    if (!listo || !ingeniero) return;
-    const revisar = () => { if (navigator.onLine) { leerEsquema(true); cargarAvisos(); } };
-    const reloj = setInterval(revisar, 10 * 60 * 1000);
-    const alVolver = () => { if (document.visibilityState === "visible") revisar(); };
-    document.addEventListener("visibilitychange", alVolver);
-    window.addEventListener("online", revisar);
-    return () => {
-      clearInterval(reloj);
-      document.removeEventListener("visibilitychange", alVolver);
-      window.removeEventListener("online", revisar);
-    };
-  }, [listo, ingeniero, leerEsquema, cargarAvisos]);
 
   const elegirIngeniero = async n => { await Store.put("meta", { id: "ingeniero", valor: n }); setIngeniero(n); };
 
@@ -1100,6 +1111,23 @@ function App() {
     }
     setCargandoAvisos(false);
   }, [ingeniero]);
+
+  // Revisión periódica: relee el formulario cada 10 minutos y al volver a la app.
+  // Así el mapeo de campos y el estado del proxy se verifican antes de que un
+  // ingeniero intente enviar, y no en el momento de enviar.
+  useEffect(() => {
+    if (!listo || !ingeniero) return;
+    const revisar = () => { if (navigator.onLine) { leerEsquema(true); cargarAvisos(); } };
+    const reloj = setInterval(revisar, 10 * 60 * 1000);
+    const alVolver = () => { if (document.visibilityState === "visible") revisar(); };
+    document.addEventListener("visibilitychange", alVolver);
+    window.addEventListener("online", revisar);
+    return () => {
+      clearInterval(reloj);
+      document.removeEventListener("visibilitychange", alVolver);
+      window.removeEventListener("online", revisar);
+    };
+  }, [listo, ingeniero, leerEsquema, cargarAvisos]);
 
   const cargarEnvios = useCallback(async () => {
     setCargandoEnvios(true); setErrEnvios("");
@@ -1177,6 +1205,7 @@ function App() {
   </>;
 }
 
+window.__appLista = true;
 ReactDOM.createRoot(document.getElementById("root")).render(<App />);
 
 if ("serviceWorker" in navigator && location.protocol === "https:") {

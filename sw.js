@@ -1,7 +1,7 @@
 /* Service worker · v2
    HTML y manifest: primero la red (para que una versión nueva llegue siempre).
    Librerías del CDN: primero la caché (para abrir sin señal). */
-const CACHE = 'ot-ia-v15';
+const CACHE = 'ot-ia-v16';
 const BASE = self.registration.scope;
 const CDN = [
   'https://unpkg.com/react@18/umd/react.production.min.js',
