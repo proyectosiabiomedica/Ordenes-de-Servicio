@@ -151,7 +151,7 @@ window.CONFIG = {
   // Token compartido: debe ser idéntico al del Apps Script
   TOKEN: "aiiPlCWrNHmMcqLQRrj9RK2QVnqfxSMzPYISzJ88dXNjB8Ys",
   FORM_ID: "260445478825062",
-  BUILD: "Rev.11"
+  BUILD: "Rev.12"
 };
 </script>
 
@@ -397,7 +397,8 @@ function resolverMapa(preguntas) {
       if (!cand.length) cand = lista.filter(q => norm(q.text).startsWith(L) || norm(q.text).includes(L));
     }
     const q = cand[(c.m.nth || 1) - 1];
-    if (q) mapa[c.k] = { qid: q.qid, type: q.type, name: q.name, text: q.text, timeFormat: q.timeFormat };
+    if (q) mapa[c.k] = { qid: q.qid, type: q.type, name: q.name, text: q.text,
+      timeFormat: q.timeFormat, obligatorio: String(q.required) === "Yes" };
     else faltantes.push(c);
   });
   return { mapa, faltantes };
@@ -422,9 +423,12 @@ function construirPayload(valores, mapa) {
   return out;
 }
 
-function faltanRequeridos(valores) {
+// Un campo es obligatorio si lo marcamos aquí o si Jotform lo exige. Tener una
+// lista propia hacía que la app dejara pasar órdenes que el formulario rechazaba.
+function faltanRequeridos(valores, mapa) {
   return TODOS.filter(c => {
-    if (!c.req) return false;
+    const exigido = c.req || (mapa && mapa[c.k] && mapa[c.k].obligatorio);
+    if (!exigido) return false;
     const v = valores[c.k];
     if (c.tipo === "checks" || c.tipo === "fotos") return !v || !v.length;
     if (c.tipo === "datetime") return !v || !v.fecha;
@@ -446,21 +450,21 @@ async function comprimirImagen(file, max = 1400, calidad = 0.72) {
 /* ==========================================================
    5. CAMPOS
    ========================================================== */
-function Etiqueta({ c }) {
-  return <span className="lb">{c.et}{c.req && <em> *</em>}</span>;
+function Etiqueta({ c, obligatorio }) {
+  return <span className="lb">{c.et}{(c.req || obligatorio) && <em> *</em>}</span>;
 }
 
-function Campo({ c, valor, set }) {
+function Campo({ c, valor, set, obligatorio }) {
   if (c.tipo === "texto" || c.tipo === "tel" || c.tipo === "email")
-    return <label className="f"><Etiqueta c={c} />
+    return <label className="f"><Etiqueta c={c} obligatorio={obligatorio} />
       <input type={c.tipo === "texto" ? "text" : c.tipo} value={valor || ""} onChange={e => set(e.target.value)}
         inputMode={c.tipo === "tel" ? "tel" : undefined} autoComplete="off" /></label>;
 
   if (c.tipo === "area")
-    return <label className="f"><Etiqueta c={c} /><textarea value={valor || ""} onChange={e => set(e.target.value)} /></label>;
+    return <label className="f"><Etiqueta c={c} obligatorio={obligatorio} /><textarea value={valor || ""} onChange={e => set(e.target.value)} /></label>;
 
   if (c.tipo === "select")
-    return <label className="f"><Etiqueta c={c} />
+    return <label className="f"><Etiqueta c={c} obligatorio={obligatorio} />
       <select value={valor || ""} onChange={e => set(e.target.value)}>
         <option value="">Seleccione</option>
         {c.opciones.map(o => <option key={o} value={o}>{o}</option>)}
@@ -468,7 +472,7 @@ function Campo({ c, valor, set }) {
 
   if (c.tipo === "datetime") {
     const v = valor || { fecha: "", hora: "" };
-    return <div className="f"><Etiqueta c={c} />
+    return <div className="f"><Etiqueta c={c} obligatorio={obligatorio} />
       <div className="row">
         <input type="date" value={v.fecha || ""} onChange={e => set({ ...v, fecha: e.target.value })} />
         <input type="time" value={v.hora || ""} onChange={e => set({ ...v, hora: e.target.value })} />
@@ -478,7 +482,7 @@ function Campo({ c, valor, set }) {
   if (c.tipo === "checks") {
     const sel = valor || [];
     const alternar = o => set(sel.includes(o) ? sel.filter(x => x !== o) : [...sel, o]);
-    return <div className="f"><Etiqueta c={c} />
+    return <div className="f"><Etiqueta c={c} obligatorio={obligatorio} />
       <div className="chips">
         {c.opciones.map(o =>
           <button key={o} type="button" className={"chip" + ((c.negativas || []).includes(o) ? " neg" : "")}
@@ -489,7 +493,7 @@ function Campo({ c, valor, set }) {
   if (c.tipo === "tabla") {
     const filas = valor && valor.length ? valor : [{ m: "", prog: "", desp: "", med: "" }];
     const cambiar = (i, k, val) => set(filas.map((f, j) => j === i ? { ...f, [k]: val } : f));
-    return <div className="f"><Etiqueta c={c} />
+    return <div className="f"><Etiqueta c={c} obligatorio={obligatorio} />
       <table className="med">
         <thead><tr><th>Medición</th><th>Valor programado</th><th>Valor desplegado</th><th>Valor medido</th><th></th></tr></thead>
         <tbody>{filas.map((f, i) =>
@@ -507,12 +511,12 @@ function Campo({ c, valor, set }) {
     </div>;
   }
 
-  if (c.tipo === "firma") return <FirmaCampo c={c} valor={valor} set={set} />;
-  if (c.tipo === "fotos") return <FotosCampo c={c} valor={valor} set={set} />;
+  if (c.tipo === "firma") return <FirmaCampo c={c} valor={valor} set={set} obligatorio={obligatorio} />;
+  if (c.tipo === "fotos") return <FotosCampo c={c} valor={valor} set={set} obligatorio={obligatorio} />;
   return null;
 }
 
-function FirmaCampo({ c, valor, set }) {
+function FirmaCampo({ c, valor, set, obligatorio }) {
   const ref = useRef(null), dib = useRef(false), ult = useRef(null);
   const preparar = useCallback(() => {
     const cv = ref.current; if (!cv) return;
@@ -535,7 +539,7 @@ function FirmaCampo({ c, valor, set }) {
   const arriba = () => { if (!dib.current) return; dib.current = false; set(ref.current.toDataURL("image/png")); };
   const limpiar = () => { const cv = ref.current, ctx = cv.getContext("2d"); ctx.clearRect(0, 0, cv.width, cv.height); set(""); };
 
-  return <div className="f"><Etiqueta c={c} />
+  return <div className="f"><Etiqueta c={c} obligatorio={obligatorio} />
     <div className="sigwrap">
       <canvas ref={ref} onPointerDown={abajo} onPointerMove={mover} onPointerUp={arriba} onPointerLeave={arriba} />
       {!valor && <div className="sighint">Firme aquí</div>}
@@ -544,7 +548,7 @@ function FirmaCampo({ c, valor, set }) {
   </div>;
 }
 
-function FotosCampo({ c, valor, set }) {
+function FotosCampo({ c, valor, set, obligatorio }) {
   const [cargando, setCargando] = useState(false);
   const fotos = valor || [];
   const agregar = async e => {
@@ -555,7 +559,7 @@ function FotosCampo({ c, valor, set }) {
     for (const f of files) { try { nuevas.push({ id: uid(), nombre: f.name, dataUrl: await comprimirImagen(f) }); } catch (err) {} }
     set([...fotos, ...nuevas]); setCargando(false);
   };
-  return <div className="f"><Etiqueta c={c} />
+  return <div className="f"><Etiqueta c={c} obligatorio={obligatorio} />
     <label className="btn ghost block" style={{ cursor: "pointer" }}>
       {cargando ? <span className="spin" /> : "Agregar fotos"}
       <input type="file" accept="image/*" multiple onChange={agregar} style={{ display: "none" }} />
@@ -607,7 +611,7 @@ function Formulario({ borrador, guardar, enviar, cancelar, mapa, faltantes }) {
   const sinMapear = S.campos.filter(c => faltantes.some(f => f.k === c.k));
 
   const intentarEnviar = () => {
-    const f = faltanRequeridos(v);
+    const f = faltanRequeridos(v, mapa);
     if (f.length) { setErrs(f); const i = SECCIONES.findIndex(s => s.campos.some(c => c.k === f[0].k)); setSec(i); return; }
     setErrs([]); enviar({ ...borrador, valores: v, seccion: sec, actualizada: Date.now() });
   };
@@ -621,7 +625,8 @@ function Formulario({ borrador, guardar, enviar, cancelar, mapa, faltantes }) {
     {!!sinMapear.length && <div className="note">Estos campos no se encontraron en el formulario de Jotform y no se enviarán: {sinMapear.map(c => c.et).join(", ")}. Revise la pestaña Ajustes.</div>}
 
     <div className="card">
-      {S.campos.map(c => <Campo key={c.k} c={c} valor={v[c.k]} set={val => set(c.k, val)} />)}
+      {S.campos.map(c => <Campo key={c.k} c={c} valor={v[c.k]} set={val => set(c.k, val)}
+        obligatorio={!!(mapa[c.k] && mapa[c.k].obligatorio)} />)}
     </div>
 
     <div className="actions">
@@ -639,7 +644,7 @@ function Formulario({ borrador, guardar, enviar, cancelar, mapa, faltantes }) {
   </main>;
 }
 
-function ListaBorradores({ borradores, abrir, borrar, nuevo }) {
+function ListaBorradores({ borradores, abrir, borrar, nuevo, mapa }) {
   return <main>
     <h2>Borradores</h2>
     <p className="lead">Órdenes sin terminar guardadas en este teléfono. Nada se pierde si cierra la app o se queda sin señal.</p>
@@ -647,7 +652,7 @@ function ListaBorradores({ borradores, abrir, borrar, nuevo }) {
     {!borradores.length
       ? <div className="empty">No hay borradores.<br />Empiece una orden y quedará aquí en cuanto escriba el primer dato.</div>
       : borradores.map(b => {
-        const v = b.valores, pend = faltanRequeridos(v).length;
+        const v = b.valores, pend = faltanRequeridos(v, mapa).length;
         return <div className="item" key={b.id}>
           <div className="body" onClick={() => abrir(b)} style={{ cursor: "pointer" }}>
             <div className="t">{v.equipo || "Equipo sin capturar"}</div>
@@ -1053,7 +1058,7 @@ function App() {
     {editando
       ? <Formulario borrador={editando} mapa={mapa} faltantes={faltantes}
           guardar={guardarBorrador} enviar={encolar} cancelar={() => { setEditando(null); refrescar(); }} />
-      : tab === "borradores" ? <ListaBorradores borradores={misBorradores}
+      : tab === "borradores" ? <ListaBorradores borradores={misBorradores} mapa={mapa}
           abrir={b => setEditando(b)} nuevo={() => setEditando(nuevaOrden(ingeniero))}
           borrar={async id => { await Store.del("drafts", id); await refrescar(); avisar("Borrador eliminado"); }} />
       : tab === "cola" ? <ColaEnvio cola={cola} enviando={enviando} reintentar={() => procesarCola(true)}
