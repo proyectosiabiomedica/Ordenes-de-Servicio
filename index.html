@@ -147,11 +147,11 @@ nav.tabs .badge{position:absolute;top:5px;right:calc(50% - 22px);background:var(
    ========================================================== */
 window.CONFIG = {
   // URL de la implementación del Apps Script (termina en /exec)
-  PROXY_URL: "https://script.google.com/macros/s/AKfycbw2nV9hEZvzPSIDlCPyHOgjB3JaAK2jkAAQ4aQHFciCUFrcXzPVtgNwPUKrNm9BKMQb/exec",
+  PROXY_URL: "https://script.google.com/macros/s/PEGAR_ID_DE_IMPLEMENTACION/exec",
   // Token compartido: debe ser idéntico al del Apps Script
-  TOKEN: "aiiPlCWrNHmMcqLQRrj9RK2QVnqfxSMzPYISzJ88dXNjB8Ys",
+  TOKEN: "CAMBIAR-ESTE-TOKEN",
   FORM_ID: "260445478825062",
-  BUILD: "Rev.07"
+  BUILD: "Rev.10"
 };
 </script>
 
@@ -689,47 +689,153 @@ function ColaEnvio({ cola, reintentar, borrar, enviando }) {
 
 function MisEnvios({ ingeniero, enviados, cargar, cargando, error }) {
   const [abierta, setAbierta] = useState(null);
+  const [detalle, setDetalle] = useState(null);
+  const [cargandoDetalle, setCargandoDetalle] = useState(false);
+  const [errDetalle, setErrDetalle] = useState("");
+  const [anio, setAnio] = useState("");
+  const [mes, setMes] = useState("");
+  const [hospital, setHospital] = useState("");
+  const [texto, setTexto] = useState("");
   useEffect(() => { cargar(); }, []);
+
+  const MESES = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
+    "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"];
+
+  // Las opciones salen de los envíos reales, así nunca se ofrece un filtro vacío.
+  const { anios, meses, hospitales } = useMemo(() => {
+    const a = new Set(), m = new Set(), h = new Set();
+    enviados.forEach(s => {
+      const d = new Date(s.created_at);
+      a.add(String(d.getFullYear()));
+      if (!anio || String(d.getFullYear()) === anio) m.add(String(d.getMonth()));
+      if (s.unidad) h.add(s.unidad.trim());
+    });
+    return {
+      anios: [...a].sort((x, y) => y - x),
+      meses: [...m].sort((x, y) => x - y),
+      hospitales: [...h].sort((x, y) => x.localeCompare(y))
+    };
+  }, [enviados, anio]);
+
+  const lista = useMemo(() => enviados.filter(s => {
+    const d = new Date(s.created_at);
+    if (anio && String(d.getFullYear()) !== anio) return false;
+    if (mes && String(d.getMonth()) !== mes) return false;
+    if (hospital && (s.unidad || "").trim() !== hospital) return false;
+    if (texto) {
+      const t = texto.toLowerCase();
+      const campos = [s.equipo, s.unidad, s.inventario, s.folio].join(" ").toLowerCase();
+      if (campos.indexOf(t) === -1) return false;
+    }
+    return true;
+  }), [enviados, anio, mes, hospital, texto]);
+
+  const limpiar = () => { setAnio(""); setMes(""); setHospital(""); setTexto(""); };
+
+  const abrir = async s => {
+    setAbierta(s); setDetalle(null); setErrDetalle(""); setCargandoDetalle(true);
+    try {
+      const d = await Api.get({ action: "detalle", fila: s.fila });
+      setDetalle(d.respuestas || []);
+    } catch (e) { setErrDetalle("No se pudo abrir el detalle: " + e.message); }
+    setCargandoDetalle(false);
+  };
+  const filtrando = anio || mes || hospital || texto;
+
   if (abierta) return <main>
     <button className="btn ghost" onClick={() => setAbierta(null)} style={{ marginBottom: 12 }}>← Volver</button>
-    <h2>Envío {abierta.id}</h2>
-    <p className="lead">{new Date(abierta.created_at).toLocaleString("es-MX")}</p>
-    <div className="card"><div className="kv">
-      {abierta.respuestas.map((r, i) => <div key={i}><b>{r.pregunta}:</b> {r.valor}</div>)}
-    </div></div>
+    <h2>{abierta.folio || "Envío " + abierta.id}</h2>
+    <p className="lead">
+      {abierta.equipo || "Equipo"} · {abierta.unidad || "—"}<br />
+      {abierta.created_at ? new Date(abierta.created_at).toLocaleString("es-MX") : ""}
+    </p>
+    {errDetalle && <div className="note bad">{errDetalle}</div>}
+    {cargandoDetalle
+      ? <div className="empty"><span className="spin" /> Abriendo la orden…</div>
+      : detalle && <div className="card"><div className="kv">
+          {detalle.map((r, i) => <div key={i}><b>{r.pregunta}:</b> {r.valor}</div>)}
+        </div></div>}
   </main>;
 
   return <main>
     <h2>Mis envíos</h2>
     <p className="lead">Órdenes registradas en Jotform a nombre de {ingeniero.split(" ")[0]}.</p>
-    <button className="btn ghost block" style={{ marginBottom: 14 }} onClick={cargar} disabled={cargando}>
-      {cargando ? <><span className="spin" /> Consultando…</> : "Actualizar"}</button>
+
+    <div className="card tight">
+      <div className="row">
+        <select value={anio} onChange={e => { setAnio(e.target.value); setMes(""); }}>
+          <option value="">Todos los años</option>
+          {anios.map(a => <option key={a} value={a}>{a}</option>)}
+        </select>
+        <select value={mes} onChange={e => setMes(e.target.value)}>
+          <option value="">Todos los meses</option>
+          {meses.map(m => <option key={m} value={m}>{MESES[Number(m)]}</option>)}
+        </select>
+      </div>
+      <select value={hospital} onChange={e => setHospital(e.target.value)} style={{ marginTop: 10 }}>
+        <option value="">Todas las unidades médicas</option>
+        {hospitales.map(h => <option key={h} value={h}>{h}</option>)}
+      </select>
+      <input type="text" placeholder="Buscar equipo, inventario o folio" value={texto}
+        onChange={e => setTexto(e.target.value)} style={{ marginTop: 10 }} />
+      <div className="actions" style={{ marginTop: 10 }}>
+        <button className="btn ghost" onClick={cargar} disabled={cargando}>
+          {cargando ? <><span className="spin" /> Consultando…</> : "Actualizar"}</button>
+        {filtrando && <button className="btn ghost" onClick={limpiar}>Quitar filtros</button>}
+      </div>
+    </div>
+
     {error && <div className="note bad">{error}</div>}
-    {!cargando && !enviados.length && !error && <div className="empty">Todavía no hay envíos a su nombre, o no hay conexión para consultarlos.</div>}
-    {enviados.map(s => <div className="item" key={s.id} onClick={() => setAbierta(s)} style={{ cursor: "pointer" }}>
+
+    <p className="lead" style={{ marginBottom: 10 }}>
+      {cargando ? "Consultando el historial…"
+        : lista.length === enviados.length
+          ? `${enviados.length} orden${enviados.length === 1 ? "" : "es"} en total`
+          : `${lista.length} de ${enviados.length} órdenes`}
+    </p>
+
+    {!cargando && !enviados.length && !error &&
+      <div className="empty">Todavía no hay envíos a su nombre, o no hay conexión para consultarlos.</div>}
+    {!cargando && enviados.length > 0 && !lista.length &&
+      <div className="empty">Ninguna orden coincide con los filtros.</div>}
+
+    {lista.map(s => <div className="item" key={s.fila} onClick={() => abrir(s)} style={{ cursor: "pointer" }}>
       <div className="body">
         <div className="t">{s.equipo || "Equipo"}</div>
-        <div className="s">{s.folio ? s.folio + " · " : ""}{s.unidad || "—"} · {s.inventario || "s/inv"}<br />{new Date(s.created_at).toLocaleString("es-MX")}</div>
+        <div className="s">{s.folio ? s.folio + " · " : ""}{s.unidad || "—"} · {s.inventario || "s/inv"}<br />
+          {s.created_at ? new Date(s.created_at).toLocaleString("es-MX") : "sin fecha"}</div>
       </div>
       <span className="tag ok">enviada</span>
     </div>)}
   </main>;
 }
 
-function Ajustes({ ingeniero, salir, esquema, faltantes, mapa, recargar, estadoProxy }) {
-  const [prueba, setPrueba] = useState("");
+function Ajustes({ ingeniero, salir, esquema, faltantes, mapa, recargar, estadoProxy, ultimaRevision }) {
+  const [prueba, setPrueba] = useState(null);
   const probar = async () => {
-    setPrueba("Probando…");
+    setPrueba({ ok: null, texto: "Probando…" });
     const url = CONFIG.PROXY_URL + "?action=ping&token=" + encodeURIComponent(CONFIG.TOKEN);
-    let t = "URL usada:\n" + url + "\n\n";
+    let principal = false, respaldo = false, det = "";
+
     try {
       const r = await fetch(url, { redirect: "follow" });
-      t += "fetch → HTTP " + r.status + "\n" + (await r.text()).slice(0, 200);
-    } catch (e) { t += "fetch → falló: " + e.message; }
-    t += "\n\n";
-    try { await Api.viaJsonp({ action: "ping" }); t += "jsonp → correcto"; }
-    catch (e) { t += "jsonp → falló: " + e.message; }
-    setPrueba(t);
+      const cuerpo = (await r.text()).slice(0, 200);
+      principal = r.ok && cuerpo.indexOf('"ok":true') > -1;
+      det += "Camino principal (fetch) → HTTP " + r.status + "\n" + cuerpo;
+    } catch (e) { det += "Camino principal (fetch) → falló: " + e.message; }
+
+    det += "\n\n";
+    try { await Api.viaJsonp({ action: "ping" }); respaldo = true; det += "Camino de respaldo (jsonp) → correcto"; }
+    catch (e) { det += "Camino de respaldo (jsonp) → no disponible: " + e.message; }
+
+    // El respaldo solo entra si una red bloquea el camino principal: que falle
+    // por sí solo no afecta en nada el funcionamiento de la app.
+    det += "\n\nURL consultada:\n" + url;
+    setPrueba({
+      ok: principal || respaldo,
+      soloUno: (principal || respaldo) && !(principal && respaldo),
+      texto: det
+    });
   };
   return <main>
     <h2>Ajustes</h2>
@@ -742,6 +848,7 @@ function Ajustes({ ingeniero, salir, esquema, faltantes, mapa, recargar, estadoP
         <div><b>Versión de la app:</b> {CONFIG.BUILD || "Rev.01"}</div>
         <div><b>Proxy en uso:</b> …{String(CONFIG.PROXY_URL).slice(-18)}</div>
         <div><b>Estado del proxy:</b> {estadoProxy}</div>
+        <div><b>Última revisión:</b> {ultimaRevision ? new Date(ultimaRevision).toLocaleString("es-MX") : "sin revisar"}</div>
         <div><b>Almacenamiento:</b> {Store.modo}</div>
         <div><b>Preguntas leídas:</b> {esquema ? Object.keys(esquema).length : 0}</div>
       </div>
@@ -750,9 +857,16 @@ function Ajustes({ ingeniero, salir, esquema, faltantes, mapa, recargar, estadoP
         <button className="btn ghost" onClick={salir}>Cambiar de ingeniero</button>
       </div>
       <button className="btn ghost block" style={{ marginTop: 10 }} onClick={probar}>Probar conexión</button>
+      {prueba && prueba.ok !== null && <div className={"note" + (prueba.ok ? "" : " bad")} style={{ marginTop: 10 }}>
+        {prueba.ok
+          ? (prueba.soloUno
+            ? "Conexión correcta. Uno de los dos caminos no está disponible, pero la app funciona con el otro."
+            : "Conexión correcta por los dos caminos.")
+          : "Sin conexión con el proxy. Revise la URL y el token."}
+      </div>}
       {prueba && <pre style={{ marginTop: 10, whiteSpace: "pre-wrap", wordBreak: "break-all",
         fontFamily: "var(--mono)", fontSize: 11, lineHeight: 1.6, color: "var(--muted)",
-        background: "#0E1217", border: "1px solid var(--line)", borderRadius: 8, padding: 10 }}>{prueba}</pre>}
+        background: "#04121F", border: "1px solid var(--line)", borderRadius: 8, padding: 10 }}>{prueba.texto}</pre>}
     </div>
 
     <h2 style={{ marginTop: 20 }}>Correspondencia de campos</h2>
@@ -786,6 +900,7 @@ function App() {
   const [cargandoEnvios, setCargandoEnvios] = useState(false);
   const [errEnvios, setErrEnvios] = useState("");
   const [toast, setToast] = useState(null);
+  const [ultimaRevision, setUltimaRevision] = useState(0);
 
   const { mapa, faltantes } = useMemo(() => esquema ? resolverMapa(esquema) : { mapa: {}, faltantes: TODOS }, [esquema]);
 
@@ -800,7 +915,7 @@ function App() {
   const leerEsquema = useCallback(async (silencio) => {
     try {
       const d = await Api.get({ action: "schema" });
-      setEsquema(d.questions); setEstadoProxy("conectado");
+      setEsquema(d.questions); setEstadoProxy("conectado"); setUltimaRevision(Date.now());
       await Store.put("meta", { id: "schema", questions: d.questions, ts: Date.now() });
       if (!silencio) avisar("Formulario leído: " + Object.keys(d.questions).length + " preguntas");
     } catch (e) {
@@ -826,6 +941,23 @@ function App() {
     window.addEventListener("online", on); window.addEventListener("offline", off);
     return () => { window.removeEventListener("online", on); window.removeEventListener("offline", off); };
   }, []);
+
+  // Revisión periódica: relee el formulario cada 10 minutos y al volver a la app.
+  // Así el mapeo de campos y el estado del proxy se verifican antes de que un
+  // ingeniero intente enviar, y no en el momento de enviar.
+  useEffect(() => {
+    if (!listo || !ingeniero) return;
+    const revisar = () => { if (navigator.onLine) leerEsquema(true); };
+    const reloj = setInterval(revisar, 10 * 60 * 1000);
+    const alVolver = () => { if (document.visibilityState === "visible") revisar(); };
+    document.addEventListener("visibilitychange", alVolver);
+    window.addEventListener("online", revisar);
+    return () => {
+      clearInterval(reloj);
+      document.removeEventListener("visibilitychange", alVolver);
+      window.removeEventListener("online", revisar);
+    };
+  }, [listo, ingeniero, leerEsquema]);
 
   const elegirIngeniero = async n => { await Store.put("meta", { id: "ingeniero", valor: n }); setIngeniero(n); };
 
@@ -881,7 +1013,7 @@ function App() {
   const cargarEnvios = useCallback(async () => {
     setCargandoEnvios(true); setErrEnvios("");
     try {
-      const d = await Api.get({ action: "submissions", ingeniero, limit: 40 });
+      const d = await Api.get({ action: "submissions", ingeniero, limit: 500 });
       setEnviados(d.items || []);
       await Store.put("meta", { id: "envios:" + ingeniero, items: d.items, ts: Date.now() });
     } catch (e) {
@@ -909,7 +1041,11 @@ function App() {
         <div className="cell"><b className={online ? "on" : "off"}>{online ? "EN LÍNEA" : "SIN SEÑAL"}</b><i>conexión</i></div>
         <div className="cell"><b>{misBorradores.length}</b><i>borradores</i></div>
         <div className="cell"><b className={cola.length ? "wait" : ""}>{cola.length}</b><i>por enviar</i></div>
-        <div className="cell"><b className={esquema ? "on" : "off"}>{esquema ? "OK" : "—"}</b><i>formulario</i></div>
+        <div className="cell">
+          <b className={esquema ? "on" : "off"}>
+            {esquema ? (ultimaRevision ? new Date(ultimaRevision).toLocaleTimeString("es-MX", { hour: "2-digit", minute: "2-digit" }) : "OK") : "—"}
+          </b><i>revisado</i>
+        </div>
       </div>
     </header>
 
@@ -923,7 +1059,7 @@ function App() {
           borrar={async id => { const o = await Store.one("outbox", id); await Store.del("outbox", id); if (o) await Store.put("drafts", { ...o, actualizada: Date.now() }); await refrescar(); avisar("Regresó a borradores"); }} />
       : tab === "envios" ? <MisEnvios ingeniero={ingeniero} enviados={enviados} cargar={cargarEnvios} cargando={cargandoEnvios} error={errEnvios} />
       : <Ajustes ingeniero={ingeniero} esquema={esquema} mapa={mapa} faltantes={faltantes}
-          estadoProxy={estadoProxy} recargar={() => leerEsquema(false)}
+          estadoProxy={estadoProxy} ultimaRevision={ultimaRevision} recargar={() => leerEsquema(false)}
           salir={async () => { await Store.del("meta", "ingeniero"); setIngeniero(""); }} />}
 
     {toast && <div className={"toast" + (toast.malo ? " bad" : "")}>{toast.msg}</div>}
