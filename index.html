@@ -151,7 +151,7 @@ window.CONFIG = {
   // Token compartido: debe ser idéntico al del Apps Script
   TOKEN: "aiiPlCWrNHmMcqLQRrj9RK2QVnqfxSMzPYISzJ88dXNjB8Ys",
   FORM_ID: "260445478825062",
-  BUILD: "Rev.13"
+  BUILD: "Rev.14"
 };
 </script>
 
@@ -431,7 +431,12 @@ function faltanRequeridos(valores, mapa) {
     const exigido = c.req || (mapa && mapa[c.k] && mapa[c.k].obligatorio);
     if (!exigido) return false;
     const v = valores[c.k];
-    if (c.tipo === "checks" || c.tipo === "fotos") return !v || !v.length;
+    if (c.tipo === "fotos") return !v || !v.length;
+    if (c.tipo === "checks") {
+      if (!v || !v.length) return true;
+      const ops = mapa && mapa[c.k] && mapa[c.k].opciones;
+      return !!(ops && ops.length && v.some(x => ops.indexOf(x) === -1));
+    }
     if (c.tipo === "datetime") return !v || !v.fecha;
     if (c.tipo === "tabla") return !v || !v.filter(r => r.m || r.prog || r.desp || r.med).length;
     if (!v) return true;
@@ -493,14 +498,21 @@ function Campo({ c, valor, set, obligatorio, opciones }) {
   }
 
   if (c.tipo === "checks") {
+    const ops = (opciones && opciones.length) ? opciones : c.opciones;
     const sel = valor || [];
     const alternar = o => set(sel.includes(o) ? sel.filter(x => x !== o) : [...sel, o]);
+    // Se compara sin acentos ni espacios raros para saber si una opción guardada
+    // sigue siendo válida: en el formulario hay valores con tabuladores dentro.
+    const sueltas = sel.filter(v => ops.indexOf(v) === -1);
     return <div className="f"><Etiqueta c={c} obligatorio={obligatorio} />
       <div className="chips">
-        {c.opciones.map(o =>
-          <button key={o} type="button" className={"chip" + ((c.negativas || []).includes(o) ? " neg" : "")}
-            aria-pressed={sel.includes(o)} onClick={() => alternar(o)}>{o}</button>)}
-      </div></div>;
+        {ops.map(o =>
+          <button key={o} type="button" className={"chip" + ((c.negativas || []).some(n => norm(n) === norm(o)) ? " neg" : "")}
+            aria-pressed={sel.includes(o)} onClick={() => alternar(o)}>{o.replace(/\s+/g, " ").trim()}</button>)}
+      </div>
+      {!!sueltas.length && <span style={{ display: "block", marginTop: 6, fontSize: 12, color: "var(--alert)" }}>
+        Hay opciones marcadas que ya no existen en el formulario. Vuelva a marcarlas arriba.
+      </span>}</div>;
   }
 
   if (c.tipo === "tabla") {
