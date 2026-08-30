@@ -131,6 +131,21 @@ nav.tabs .badge{position:absolute;top:5px;right:calc(50% - 20px);background:var(
 .note.bad{border-color:var(--alert);background:#2B1A18;color:#F8D8D2}
 .toast{position:fixed;left:14px;right:14px;bottom:calc(84px + var(--safe-b));z-index:60;background:var(--panel-2);border:1px solid var(--line);border-left:3px solid var(--mint);border-radius:8px;padding:12px 14px;font-size:13.5px;box-shadow:0 10px 30px rgba(0,0,0,.5)}
 .toast.bad{border-left-color:var(--alert)}
+.hilo{display:flex;gap:12px;align-items:flex-start;background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:12px 13px;margin-bottom:9px;cursor:pointer}
+.hilo .body{flex:1;min-width:0}
+.hilo .t{font-weight:600;font-size:14.5px;margin-bottom:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.hilo .u{font-size:12.5px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.hilo .h{font-family:var(--mono);font-size:10px;color:var(--muted);white-space:nowrap}
+.burbujas{display:flex;flex-direction:column;gap:9px;margin-bottom:14px}
+.msj{max-width:86%;padding:9px 12px;border-radius:12px;background:var(--panel);border:1px solid var(--line);align-self:flex-start}
+.msj.mio{align-self:flex-end;background:var(--azul);border-color:var(--azul)}
+.msj .a{font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin-bottom:3px;font-weight:600}
+.msj.mio .a{color:#CDE8F8}
+.msj .m{font-size:14px;line-height:1.5;white-space:pre-wrap;word-break:break-word}
+.msj .h{font-size:10px;font-family:var(--mono);color:var(--muted);margin-top:4px;text-align:right}
+.msj.mio .h{color:#B6DCF2}
+.redactar{position:sticky;bottom:calc(72px + var(--safe-b));background:var(--ink);padding-top:8px;display:flex;gap:8px;align-items:flex-end}
+.redactar textarea{min-height:44px;max-height:120px}
 .aviso{background:var(--panel);border:1px solid var(--line);border-left:3px solid var(--amber);border-radius:var(--radius);padding:13px 14px;margin-bottom:10px}
 .aviso.mantenimiento{border-left-color:var(--mint)}
 .aviso.urgente{border-left-color:var(--alert)}
@@ -184,7 +199,7 @@ window.CONFIG = {
   // Token compartido: debe ser idéntico al del Apps Script
   TOKEN: "aiiPlCWrNHmMcqLQRrj9RK2QVnqfxSMzPYISzJ88dXNjB8Ys",
   FORM_ID: "260445478825062",
-  BUILD: "Rev.16"
+  BUILD: "Rev.17"
 };
 </script>
 
@@ -199,15 +214,15 @@ const { useState, useEffect, useRef, useCallback, useMemo } = React;
    1. ALMACENAMIENTO LOCAL  (IndexedDB → localStorage → RAM)
    ========================================================== */
 const Store = (() => {
-  const DB = "ot_ia_v1", STORES = ["drafts", "outbox", "sent", "meta"];
+  const DB = "ot_ia_v2", STORES = ["drafts", "outbox", "sent", "meta", "chatCola"];
   let db = null, modo = "memoria";
-  const mem = { drafts: {}, outbox: {}, sent: {}, meta: {} };
+  const mem = { drafts: {}, outbox: {}, sent: {}, meta: {}, chatCola: {} };
 
   function abrir() {
     return new Promise(res => {
       if (!("indexedDB" in window)) return res(null);
       let req;
-      try { req = indexedDB.open(DB, 1); } catch (e) { return res(null); }
+      try { req = indexedDB.open(DB, 2); } catch (e) { return res(null); }
       req.onupgradeneeded = () => STORES.forEach(s => {
         if (!req.result.objectStoreNames.contains(s)) req.result.createObjectStore(s, { keyPath: "id" });
       });
@@ -631,8 +646,19 @@ function FotosCampo({ c, valor, set, obligatorio }) {
 /* ==========================================================
    6. PANTALLAS
    ========================================================== */
-function Identificacion({ onListo, mapa }) {
+function Identificacion({ onListo, mapa, entrarCoordinador }) {
   const [n, setN] = useState("");
+  const [pin, setPin] = useState("");
+  const [modo, setModo] = useState("ingeniero");
+  const [err, setErr] = useState("");
+  const [validando, setValidando] = useState(false);
+
+  const entrar = async () => {
+    setValidando(true); setErr("");
+    const e = await entrarCoordinador(pin);
+    if (e) { setErr(e); setPin(""); }
+    setValidando(false);
+  };
   const lista = (mapa && mapa.ingeniero && mapa.ingeniero.opciones && mapa.ingeniero.opciones.length)
     ? mapa.ingeniero.opciones : INGENIEROS;
   return <main>
@@ -641,11 +667,25 @@ function Identificacion({ onListo, mapa }) {
       <h1 style={{ fontSize: 26, margin: 0, letterSpacing: "-.01em" }}>Orden de Trabajo</h1>
       <p className="lead" style={{ maxWidth: 320 }}>Elija su nombre. Queda guardado en este dispositivo para filtrar sus borradores y envíos.</p>
       <div style={{ width: "100%", maxWidth: 380 }}>
-        <select value={n} onChange={e => setN(e.target.value)}>
-          <option value="">Seleccione ingeniero</option>
-          {lista.map(i => <option key={i} value={i}>{i}</option>)}
-        </select>
-        <button className="btn primary block" style={{ marginTop: 12 }} disabled={!n} onClick={() => onListo(n)}>Entrar</button>
+        {modo === "ingeniero" ? <>
+          <select value={n} onChange={e => setN(e.target.value)}>
+            <option value="">Seleccione ingeniero</option>
+            {lista.map(i => <option key={i} value={i}>{i}</option>)}
+          </select>
+          <button className="btn primary block" style={{ marginTop: 12 }} disabled={!n} onClick={() => onListo(n)}>Entrar</button>
+          <button className="btn ghost block" style={{ marginTop: 10 }} onClick={() => { setModo("coordinador"); setErr(""); }}>
+            Entrar como coordinación</button>
+        </> : <>
+          <p className="lead" style={{ marginBottom: 10 }}>Proyectos IA Biomédica · PIN de 4 dígitos</p>
+          <input type="password" inputMode="numeric" maxLength={4} value={pin}
+            onChange={e => setPin(e.target.value.replace(/\D/g, ""))}
+            style={{ textAlign: "center", letterSpacing: ".5em", fontSize: 22 }} />
+          {err && <div className="note bad" style={{ marginTop: 10 }}>{err}</div>}
+          <button className="btn primary block" style={{ marginTop: 12 }} disabled={pin.length !== 4 || validando} onClick={entrar}>
+            {validando ? <span className="spin" /> : "Entrar"}</button>
+          <button className="btn ghost block" style={{ marginTop: 10 }} onClick={() => { setModo("ingeniero"); setErr(""); }}>
+            Volver</button>
+        </>}
       </div>
     </div>
   </main>;
@@ -904,6 +944,95 @@ function Avisos({ ingeniero, avisos, cargar, cargando, error }) {
   </main>;
 }
 
+function Chat({ ingeniero, sesion, esCoordinador, hilos, cargarHilos, cargando, error,
+  hiloAbierto, abrirHilo, cerrarHilo, mensajes, enviarMensaje, enviando, pendientes, noLeidos }) {
+  const [texto, setTexto] = useState("");
+  const [nuevo, setNuevo] = useState(false);
+  const [clave, setClave] = useState("");
+  const [titulo, setTitulo] = useState("");
+  const finRef = useRef(null);
+
+  useEffect(() => { cargarHilos(); }, []);
+  useEffect(() => { if (finRef.current) finRef.current.scrollIntoView({ block: "end" }); }, [mensajes.length]);
+
+  const mandar = async () => {
+    const t = texto.trim();
+    if (!t) return;
+    setTexto("");
+    await enviarMensaje(t);
+  };
+
+  if (nuevo) return <main>
+    <button className="btn ghost" onClick={() => setNuevo(false)} style={{ marginBottom: 12 }}>← Volver</button>
+    <h2>Nueva conversación</h2>
+    <p className="lead">Se identifica por el número de inventario del equipo o por el folio de la orden.</p>
+    <div className="card">
+      <label className="f"><span className="lb">Inventario o folio <em>*</em></span>
+        <input type="text" value={clave} onChange={e => setClave(e.target.value.toUpperCase())}
+          placeholder="PAT396 o IAB-24478" /></label>
+      <label className="f"><span className="lb">Asunto <em>*</em></span>
+        <input type="text" value={titulo} onChange={e => setTitulo(e.target.value)}
+          placeholder="Monitor de signos vitales, UCIN" /></label>
+      <button className="btn primary block" disabled={!clave.trim() || !titulo.trim()}
+        onClick={() => { abrirHilo({ clave: clave.trim(), titulo: titulo.trim(), ingeniero }); setNuevo(false); setClave(""); setTitulo(""); }}>
+        Abrir conversación</button>
+    </div>
+  </main>;
+
+  if (hiloAbierto) return <main>
+    <button className="btn ghost" onClick={cerrarHilo} style={{ marginBottom: 12 }}>← Conversaciones</button>
+    <h2>{hiloAbierto.titulo || hiloAbierto.clave}</h2>
+    <p className="lead">{hiloAbierto.clave}{hiloAbierto.ingeniero ? " · " + hiloAbierto.ingeniero : ""}</p>
+
+    {!mensajes.length && <div className="empty">Todavía no hay mensajes. Escriba el primero.</div>}
+    <div className="burbujas">
+      {mensajes.map((m, i) => {
+        const mio = norm(m.autor) === norm(esCoordinador ? "Proyectos IA Biomédica" : ingeniero);
+        return <div className={"msj" + (mio ? " mio" : "")} key={m.ts + "_" + i}>
+          {!mio && <div className="a">{m.autor}</div>}
+          <div className="m">{m.mensaje}</div>
+          <div className="h">{m.fecha ? new Date(m.fecha).toLocaleString("es-MX", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }) : ""}{m.enCola ? " · por enviar" : ""}</div>
+        </div>;
+      })}
+      <div ref={finRef} />
+    </div>
+
+    <div className="redactar">
+      <textarea value={texto} onChange={e => setTexto(e.target.value)} placeholder="Escriba su mensaje" />
+      <button className="btn primary" style={{ padding: "12px 18px" }} disabled={!texto.trim() || enviando} onClick={mandar}>
+        {enviando ? <span className="spin" /> : "Enviar"}</button>
+    </div>
+  </main>;
+
+  return <main>
+    <h2>Chat</h2>
+    <p className="lead">{esCoordinador
+      ? "Todas las conversaciones del equipo."
+      : "Conversaciones sobre sus órdenes y equipos."}</p>
+
+    <button className="btn primary block" style={{ marginBottom: 10 }} onClick={() => setNuevo(true)}>Nueva conversación</button>
+    <button className="btn ghost block" style={{ marginBottom: 14 }} onClick={cargarHilos} disabled={cargando}>
+      {cargando ? <><span className="spin" /> Consultando…</> : "Actualizar"}</button>
+
+    {!!pendientes && <div className="note">{pendientes} mensaje(s) esperando señal. Se envían solos al reconectar.</div>}
+    {error && <div className="note bad">{error}</div>}
+    {!cargando && !hilos.length && !error && <div className="empty">No hay conversaciones todavía.</div>}
+
+    {hilos.map(h => <div className="hilo" key={h.clave} onClick={() => abrirHilo(h)}>
+      <div className="body">
+        <div className="t">{h.titulo || h.clave}</div>
+        <div className="u">{h.ultimoAutor ? h.ultimoAutor.split(" ")[0] + ": " : ""}{h.ultimo || ""}</div>
+        <div className="u" style={{ marginTop: 3, fontFamily: "var(--mono)", fontSize: 11 }}>
+          {h.clave}{esCoordinador && h.ingeniero ? " · " + h.ingeniero.split(" ").slice(0, 2).join(" ") : ""}</div>
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 6, alignItems: "flex-end" }}>
+        <span className="h">{h.ultimaFecha ? new Date(h.ultimaFecha).toLocaleDateString("es-MX", { day: "2-digit", month: "short" }) : ""}</span>
+        {noLeidos[h.clave] > 0 && <span className="tag pend">{noLeidos[h.clave]} nuevo(s)</span>}
+      </div>
+    </div>)}
+  </main>;
+}
+
 function Ajustes({ ingeniero, salir, esquema, faltantes, mapa, recargar, estadoProxy, ultimaRevision }) {
   const [prueba, setPrueba] = useState(null);
   const probar = async () => {
@@ -999,6 +1128,15 @@ function App() {
   const [cargandoAvisos, setCargandoAvisos] = useState(false);
   const [errAvisos, setErrAvisos] = useState("");
   const [avisosVistos, setAvisosVistos] = useState(0);
+  const [sesion, setSesion] = useState("");
+  const [hilos, setHilos] = useState([]);
+  const [hiloAbierto, setHiloAbierto] = useState(null);
+  const [mensajes, setMensajes] = useState([]);
+  const [cargandoChat, setCargandoChat] = useState(false);
+  const [errChat, setErrChat] = useState("");
+  const [enviandoMsj, setEnviandoMsj] = useState(false);
+  const [colaChat, setColaChat] = useState([]);
+  const [leidos, setLeidos] = useState({});
 
   const { mapa, faltantes } = useMemo(() => esquema ? resolverMapa(esquema) : { mapa: {}, faltantes: TODOS }, [esquema]);
 
@@ -1033,6 +1171,12 @@ function App() {
       if (c) setEsquema(c.questions);
       const vistos = await Store.one("meta", "avisosVistos");
       if (vistos) setAvisosVistos(vistos.ts || 0);
+      const ses = await Store.one("meta", "sesion");
+      // La sesión del coordinador dura 12 horas en el servidor
+      if (ses && ses.token && Date.now() - ses.ts < 12 * 3600 * 1000) setSesion(ses.token);
+      const l = await Store.one("meta", "leidos");
+      if (l) setLeidos(l.mapa || {});
+      setColaChat(await Store.all("chatCola"));
       if (g) {
         const guardados = await Store.one("meta", "avisos:" + g.valor);
         if (guardados) setAvisos(guardados.items || []);
@@ -1048,6 +1192,16 @@ function App() {
 
 
   const elegirIngeniero = async n => { await Store.put("meta", { id: "ingeniero", valor: n }); setIngeniero(n); };
+
+  const entrarCoordinador = async pin => {
+    try {
+      const d = await Api.get({ action: "login", pin });
+      await Store.put("meta", { id: "sesion", token: d.sesion, nombre: d.nombre, ts: Date.now() });
+      await Store.put("meta", { id: "ingeniero", valor: d.nombre });
+      setSesion(d.sesion); setIngeniero(d.nombre);
+      return "";
+    } catch (e) { return e.message; }
+  };
 
   const guardarBorrador = async (b, silencio) => {
     await Store.put("drafts", b);
@@ -1098,6 +1252,79 @@ function App() {
     procesarCola(false);
   };
 
+  const esCoordinador = !!sesion;
+
+  const cargarHilos = useCallback(async () => {
+    setCargandoChat(true); setErrChat("");
+    try {
+      const d = await Api.get({ action: "chatHilos", ingeniero, sesion });
+      setHilos(d.hilos || []);
+      await Store.put("meta", { id: "hilos:" + ingeniero, items: d.hilos, ts: Date.now() });
+    } catch (e) {
+      const c = await Store.one("meta", "hilos:" + ingeniero);
+      if (c) { setHilos(c.items || []); setErrChat("Sin conexión. Se muestran las últimas conversaciones guardadas."); }
+      else setErrChat("No se pudo consultar el chat: " + e.message);
+    }
+    setCargandoChat(false);
+  }, [ingeniero, sesion]);
+
+  const cargarMensajes = useCallback(async (hilo, silencio) => {
+    if (!hilo) return;
+    try {
+      const d = await Api.get({ action: "chatMensajes", clave: hilo.clave });
+      const cola = (await Store.all("chatCola")).filter(m => m.clave === hilo.clave);
+      setMensajes([...(d.mensajes || []), ...cola.map(m => ({ ...m, enCola: true }))]);
+      await Store.put("meta", { id: "msj:" + hilo.clave, items: d.mensajes, ts: Date.now() });
+      const marca = Date.now();
+      setLeidos(prev => ({ ...prev, [hilo.clave]: marca }));
+      await Store.put("meta", { id: "leidos", mapa: { ...leidos, [hilo.clave]: marca } });
+    } catch (e) {
+      if (!silencio) {
+        const c = await Store.one("meta", "msj:" + hilo.clave);
+        if (c) setMensajes(c.items || []);
+      }
+    }
+  }, [leidos]);
+
+  const abrirHilo = useCallback(async hilo => {
+    setHiloAbierto(hilo); setMensajes([]);
+    await cargarMensajes(hilo);
+  }, [cargarMensajes]);
+
+  const procesarColaChat = useCallback(async () => {
+    const pend = await Store.all("chatCola");
+    if (!pend.length || !navigator.onLine) { setColaChat(pend); return; }
+    for (const m of pend.sort((a, b) => a.ts - b.ts)) {
+      try {
+        await Api.post({ action: "chatEnviar", clave: m.clave, titulo: m.titulo,
+          ingeniero: m.ingeniero, autor: m.autor, mensaje: m.mensaje, sesion });
+        await Store.del("chatCola", m.id);
+      } catch (e) { /* se queda para el siguiente intento */ }
+    }
+    setColaChat(await Store.all("chatCola"));
+  }, [sesion]);
+
+  const enviarMensaje = useCallback(async texto => {
+    if (!hiloAbierto) return;
+    setEnviandoMsj(true);
+    const autor = esCoordinador ? "Proyectos IA Biomédica" : ingeniero;
+    const m = { id: uid(), ts: Date.now(), fecha: new Date().toISOString(), clave: hiloAbierto.clave,
+      titulo: hiloAbierto.titulo, ingeniero: hiloAbierto.ingeniero || ingeniero, autor, mensaje: texto };
+    setMensajes(prev => [...prev, { ...m, enCola: true }]);
+    try {
+      await Api.post({ action: "chatEnviar", clave: m.clave, titulo: m.titulo,
+        ingeniero: m.ingeniero, autor: m.autor, mensaje: m.mensaje, sesion });
+      await cargarMensajes(hiloAbierto, true);
+      cargarHilos();
+    } catch (e) {
+      // Sin señal el mensaje espera en el dispositivo, igual que las órdenes
+      await Store.put("chatCola", m);
+      setColaChat(await Store.all("chatCola"));
+      avisar("Sin señal. El mensaje se enviará al reconectar.", true);
+    }
+    setEnviandoMsj(false);
+  }, [hiloAbierto, ingeniero, esCoordinador, sesion, cargarMensajes, cargarHilos]);
+
   const cargarAvisos = useCallback(async () => {
     setCargandoAvisos(true); setErrAvisos("");
     try {
@@ -1129,6 +1356,20 @@ function App() {
     };
   }, [listo, ingeniero, leerEsquema, cargarAvisos]);
 
+  // El chat se consulta solo mientras su pestaña está abierta, cada 25 segundos.
+  // Un sondeo permanente agotaría la cuota diaria de Apps Script y dejaría sin
+  // servicio el envío de órdenes, que es lo que no puede fallar.
+  useEffect(() => {
+    if (tab !== "chat" || !listo) return;
+    const reloj = setInterval(() => {
+      if (!navigator.onLine) return;
+      if (hiloAbierto) cargarMensajes(hiloAbierto, true); else cargarHilos();
+    }, 25000);
+    return () => clearInterval(reloj);
+  }, [tab, listo, hiloAbierto, cargarMensajes, cargarHilos]);
+
+  useEffect(() => { if (online && listo) procesarColaChat(); }, [online, listo, procesarColaChat]);
+
   const cargarEnvios = useCallback(async () => {
     setCargandoEnvios(true); setErrEnvios("");
     try {
@@ -1146,6 +1387,13 @@ function App() {
   if (!listo) return <div className="center"><span className="spin" /></div>;
   if (!ingeniero) return <Identificacion onListo={elegirIngeniero} mapa={mapa} />;
 
+  const noLeidosPorHilo = {};
+  hilos.forEach(h => {
+    const marca = leidos[h.clave] || 0;
+    noLeidosPorHilo[h.clave] = (h.ultimoTs && h.ultimoTs > marca) ? 1 : 0;
+  });
+  const hilosNuevos = Object.values(noLeidosPorHilo).filter(Boolean).length;
+
   const avisosNuevos = avisos.filter(a => a.fecha && new Date(a.fecha).getTime() > avisosVistos).length;
   const verAvisos = async () => {
     setTab("avisos");
@@ -1162,7 +1410,10 @@ function App() {
         <img src="icon-192.png" alt="" width="26" height="26"
           style={{ borderRadius: 5, background: "#fff", flexShrink: 0 }} />
         <div className="brand">Orden de <span>Trabajo</span></div>
-        <div className="who">{ingeniero.split(" ").slice(0, 2).join(" ")}<br />IA Biomédica</div>
+        <div className="who">{ingeniero.split(" ").slice(0, 2).join(" ")}<br />{esCoordinador ? "Coordinación" : "IA Biomédica"}</div>
+        <button onClick={() => setTab("ajustes")} aria-label="Ajustes"
+          style={{ background: "none", border: 0, color: tab === "ajustes" ? "var(--amber)" : "var(--muted)",
+            fontSize: 19, cursor: "pointer", padding: "2px 0 2px 10px", lineHeight: 1 }}>⚙</button>
       </div>
       <div className="strip">
         <div className="cell"><b className={online ? "on" : "off"}>{online ? "EN LÍNEA" : "SIN SEÑAL"}</b><i>conexión</i></div>
@@ -1186,6 +1437,11 @@ function App() {
           borrar={async id => { const o = await Store.one("outbox", id); await Store.del("outbox", id); if (o) await Store.put("drafts", { ...o, actualizada: Date.now() }); await refrescar(); avisar("Regresó a borradores"); }} />
       : tab === "envios" ? <MisEnvios ingeniero={ingeniero} enviados={enviados} cargar={cargarEnvios} cargando={cargandoEnvios} error={errEnvios} />
       : tab === "avisos" ? <Avisos ingeniero={ingeniero} avisos={avisos} cargar={cargarAvisos} cargando={cargandoAvisos} error={errAvisos} />
+      : tab === "chat" ? <Chat ingeniero={ingeniero} sesion={sesion} esCoordinador={esCoordinador}
+          hilos={hilos} cargarHilos={cargarHilos} cargando={cargandoChat} error={errChat}
+          hiloAbierto={hiloAbierto} abrirHilo={abrirHilo} cerrarHilo={() => { setHiloAbierto(null); cargarHilos(); }}
+          mensajes={mensajes} enviarMensaje={enviarMensaje} enviando={enviandoMsj}
+          pendientes={colaChat.length} noLeidos={noLeidosPorHilo} />
       : <Ajustes ingeniero={ingeniero} esquema={esquema} mapa={mapa} faltantes={faltantes}
           estadoProxy={estadoProxy} ultimaRevision={ultimaRevision} recargar={() => leerEsquema(false)}
           salir={async () => { await Store.del("meta", "ingeniero"); setIngeniero(""); }} />}
@@ -1194,12 +1450,13 @@ function App() {
 
     {!editando && <nav className="tabs">
       {[["borradores", "▤", "Borradores"], ["cola", "⇧", "Por enviar"], ["envios", "✓", "Mis envíos"],
-        ["avisos", "⚑", "Avisos"], ["ajustes", "⚙", "Ajustes"]].map(([k, ic, et]) =>
+        ["avisos", "⚑", "Avisos"], ["chat", "✉", "Chat"]].map(([k, ic, et]) =>
         <button key={k} aria-current={tab === k ? "page" : undefined}
           onClick={() => k === "avisos" ? verAvisos() : setTab(k)}>
           <span className="ic">{ic}</span>{et}
           {k === "cola" && cola.length > 0 && <span className="badge">{cola.length}</span>}
           {k === "avisos" && avisosNuevos > 0 && <span className="badge">{avisosNuevos}</span>}
+          {k === "chat" && (hilosNuevos + colaChat.length) > 0 && <span className="badge">{hilosNuevos + colaChat.length}</span>}
         </button>)}
     </nav>}
   </>;
