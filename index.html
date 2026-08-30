@@ -199,7 +199,7 @@ window.CONFIG = {
   // Token compartido: debe ser idéntico al del Apps Script
   TOKEN: "aiiPlCWrNHmMcqLQRrj9RK2QVnqfxSMzPYISzJ88dXNjB8Ys",
   FORM_ID: "260445478825062",
-  BUILD: "Rev.17"
+  BUILD: "Rev.18"
 };
 </script>
 
@@ -1385,7 +1385,8 @@ function App() {
   }, [ingeniero]);
 
   if (!listo) return <div className="center"><span className="spin" /></div>;
-  if (!ingeniero) return <Identificacion onListo={elegirIngeniero} mapa={mapa} />;
+  if (!ingeniero) return <Identificacion onListo={elegirIngeniero} mapa={mapa}
+    entrarCoordinador={entrarCoordinador} />;
 
   const noLeidosPorHilo = {};
   hilos.forEach(h => {
