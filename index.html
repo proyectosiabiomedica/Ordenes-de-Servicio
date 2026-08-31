@@ -199,7 +199,7 @@ window.CONFIG = {
   // Token compartido: debe ser idéntico al del Apps Script
   TOKEN: "aiiPlCWrNHmMcqLQRrj9RK2QVnqfxSMzPYISzJ88dXNjB8Ys",
   FORM_ID: "260445478825062",
-  BUILD: "Rev.20"
+  BUILD: "Rev.21"
 };
 </script>
 
@@ -1005,8 +1005,10 @@ function Avisos({ ingeniero, avisos, cargar, cargando, error, esCoordinador, ing
 }
 
 function Chat({ ingeniero, sesion, esCoordinador, hilos, cargarHilos, cargando, error,
-  hiloAbierto, abrirHilo, cerrarHilo, mensajes, enviarMensaje, enviando, pendientes, noLeidos, finalizar }) {
+  hiloAbierto, abrirHilo, cerrarHilo, mensajes, enviarMensaje, enviando, pendientes, noLeidos,
+  finalizar, ingenieros, reasignar }) {
   const [confirmando, setConfirmando] = useState(false);
+  const [destino, setDestino] = useState("");
   const [texto, setTexto] = useState("");
   const [nuevo, setNuevo] = useState(false);
   const [clave, setClave] = useState("");
@@ -1034,16 +1036,34 @@ function Chat({ ingeniero, sesion, esCoordinador, hilos, cargarHilos, cargando, 
       <label className="f"><span className="lb">Asunto <em>*</em></span>
         <input type="text" value={titulo} onChange={e => setTitulo(e.target.value)}
           placeholder="Monitor de signos vitales, UCIN" /></label>
-      <button className="btn primary block" disabled={!clave.trim() || !titulo.trim()}
-        onClick={() => { abrirHilo({ clave: clave.trim(), titulo: titulo.trim(), ingeniero }); setNuevo(false); setClave(""); setTitulo(""); }}>
-        Abrir conversación</button>
+      {/* La conversación pertenece a un ingeniero: es lo que decide quién la ve */}
+      {esCoordinador && <label className="f"><span className="lb">Dirigida a <em>*</em></span>
+        <select value={destino} onChange={e => setDestino(e.target.value)}>
+          <option value="">Seleccione ingeniero</option>
+          {ingenieros.map(i => <option key={i} value={i}>{i}</option>)}
+        </select></label>}
+      <button className="btn primary block"
+        disabled={!clave.trim() || !titulo.trim() || (esCoordinador && !destino)}
+        onClick={() => {
+          abrirHilo({ clave: clave.trim(), titulo: titulo.trim(), ingeniero: esCoordinador ? destino : ingeniero });
+          setNuevo(false); setClave(""); setTitulo(""); setDestino("");
+        }}>Abrir conversación</button>
     </div>
   </main>;
 
   if (hiloAbierto) return <main>
     <button className="btn ghost" onClick={cerrarHilo} style={{ marginBottom: 12 }}>← Conversaciones</button>
     <h2>{hiloAbierto.titulo || hiloAbierto.clave}</h2>
-    <p className="lead">{hiloAbierto.clave}{hiloAbierto.ingeniero ? " · " + hiloAbierto.ingeniero : ""}</p>
+    <p className="lead">{hiloAbierto.clave}
+      {hiloAbierto.ingeniero ? " · dirigida a " + hiloAbierto.ingeniero : " · sin ingeniero asignado"}</p>
+
+    {esCoordinador && <div className="card tight" style={{ marginBottom: 14 }}>
+      <label className="f" style={{ marginBottom: 0 }}><span className="lb">Ingeniero asignado</span>
+        <select value={hiloAbierto.ingeniero || ""} onChange={e => reasignar(hiloAbierto, e.target.value)}>
+          <option value="">Sin asignar</option>
+          {ingenieros.map(i => <option key={i} value={i}>{i}</option>)}
+        </select></label>
+    </div>}
 
     {!mensajes.length && <div className="empty">Todavía no hay mensajes. Escriba el primero.</div>}
     <div className="burbujas">
@@ -1096,7 +1116,10 @@ function Chat({ ingeniero, sesion, esCoordinador, hilos, cargarHilos, cargando, 
         <div className="t">{h.titulo || h.clave}</div>
         <div className="u">{h.ultimoAutor ? h.ultimoAutor.split(" ")[0] + ": " : ""}{h.ultimo || ""}</div>
         <div className="u" style={{ marginTop: 3, fontFamily: "var(--mono)", fontSize: 11 }}>
-          {h.clave}{esCoordinador && h.ingeniero ? " · " + h.ingeniero.split(" ").slice(0, 2).join(" ") : ""}</div>
+          {h.clave}{esCoordinador
+            ? (h.ingeniero ? " · " + h.ingeniero.split(" ").slice(0, 2).join(" ")
+              : <span style={{ color: "var(--alert)" }}> · sin asignar</span>)
+            : ""}</div>
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: 6, alignItems: "flex-end" }}>
         <span className="h">{h.ultimaFecha ? new Date(h.ultimaFecha).toLocaleDateString("es-MX", { day: "2-digit", month: "short" }) : ""}</span>
@@ -1407,6 +1430,15 @@ function App() {
     } catch (e) { avisar("No se pudo publicar: " + e.message, true); return false; }
   }, [sesion]);
 
+  const reasignarHilo = useCallback(async (hilo, nuevoIngeniero) => {
+    try {
+      await Api.post({ action: "chatReasignar", clave: hilo.clave, ingeniero: nuevoIngeniero, sesion });
+      setHiloAbierto({ ...hilo, ingeniero: nuevoIngeniero });
+      await cargarHilos();
+      avisar(nuevoIngeniero ? "Conversación asignada a " + nuevoIngeniero.split(" ")[0] : "Conversación sin asignar");
+    } catch (e) { avisar("No se pudo reasignar: " + e.message, true); }
+  }, [sesion, cargarHilos]);
+
   const finalizarHilo = useCallback(async hilo => {
     try {
       await Api.post({ action: "chatEliminar", clave: hilo.clave, sesion });
@@ -1535,7 +1567,8 @@ function App() {
           hilos={hilos} cargarHilos={cargarHilos} cargando={cargandoChat} error={errChat}
           hiloAbierto={hiloAbierto} abrirHilo={abrirHilo} cerrarHilo={() => { setHiloAbierto(null); cargarHilos(); }}
           mensajes={mensajes} enviarMensaje={enviarMensaje} enviando={enviandoMsj}
-          pendientes={colaChat.length} noLeidos={noLeidosPorHilo} finalizar={finalizarHilo} />
+          pendientes={colaChat.length} noLeidos={noLeidosPorHilo} finalizar={finalizarHilo}
+          ingenieros={(mapa.ingeniero && mapa.ingeniero.opciones) || INGENIEROS} reasignar={reasignarHilo} />
       : <Ajustes ingeniero={ingeniero} esquema={esquema} mapa={mapa} faltantes={faltantes}
           estadoProxy={estadoProxy} ultimaRevision={ultimaRevision} recargar={() => leerEsquema(false)}
           salir={async () => {
