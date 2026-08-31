@@ -199,7 +199,7 @@ window.CONFIG = {
   // Token compartido: debe ser idéntico al del Apps Script
   TOKEN: "aiiPlCWrNHmMcqLQRrj9RK2QVnqfxSMzPYISzJ88dXNjB8Ys",
   FORM_ID: "260445478825062",
-  BUILD: "Rev.18"
+  BUILD: "Rev.19"
 };
 </script>
 
@@ -921,25 +921,84 @@ function MisEnvios({ ingeniero, enviados, cargar, cargando, error }) {
   </main>;
 }
 
-function Avisos({ ingeniero, avisos, cargar, cargando, error }) {
+function Avisos({ ingeniero, avisos, cargar, cargando, error, esCoordinador, ingenieros, guardar }) {
+  const [editando, setEditando] = useState(null);
+  const [guardando, setGuardando] = useState(false);
+  const [aviso, setAviso] = useState({ destinatario: "TODOS", tipo: "informativo", titulo: "", mensaje: "" });
   useEffect(() => { cargar(); }, []);
+
+  const abrirNuevo = () => {
+    setAviso({ destinatario: "TODOS", tipo: "informativo", titulo: "", mensaje: "" });
+    setEditando("nuevo");
+  };
+  const abrirEdicion = a => {
+    setAviso({ fila: a.fila, destinatario: a.destinatario, tipo: a.tipo, titulo: a.titulo, mensaje: a.mensaje });
+    setEditando(a.id);
+  };
+  const publicar = async () => {
+    setGuardando(true);
+    const ok = await guardar({ ...aviso, activo: true });
+    setGuardando(false);
+    if (ok) setEditando(null);
+  };
+  const alternar = async a => { await guardar({ fila: a.fila, activo: !a.activo }); };
+
+  if (editando) return <main>
+    <button className="btn ghost" onClick={() => setEditando(null)} style={{ marginBottom: 12 }}>← Volver</button>
+    <h2>{editando === "nuevo" ? "Nuevo aviso" : "Editar aviso"}</h2>
+    <p className="lead">Aparece en la pestaña Avisos del ingeniero asignado.</p>
+    <div className="card">
+      <label className="f"><span className="lb">Para <em>*</em></span>
+        <select value={aviso.destinatario} onChange={e => setAviso({ ...aviso, destinatario: e.target.value })}>
+          <option value="TODOS">Todo el equipo</option>
+          {ingenieros.map(i => <option key={i} value={i}>{i}</option>)}
+        </select></label>
+      <label className="f"><span className="lb">Tipo</span>
+        <select value={aviso.tipo} onChange={e => setAviso({ ...aviso, tipo: e.target.value })}>
+          <option value="informativo">Informativo</option>
+          <option value="mantenimiento">Mantenimiento asignado</option>
+          <option value="urgente">Urgente</option>
+        </select></label>
+      <label className="f"><span className="lb">Título <em>*</em></span>
+        <input type="text" value={aviso.titulo} onChange={e => setAviso({ ...aviso, titulo: e.target.value })}
+          placeholder="Mantenimientos de la semana" /></label>
+      <label className="f"><span className="lb">Mensaje <em>*</em></span>
+        <textarea value={aviso.mensaje} onChange={e => setAviso({ ...aviso, mensaje: e.target.value })}
+          style={{ minHeight: 150 }} placeholder="Un equipo por renglón, con su ubicación y fecha programada" /></label>
+      <button className="btn primary block" disabled={!aviso.titulo.trim() || !aviso.mensaje.trim() || guardando}
+        onClick={publicar}>{guardando ? <span className="spin" /> : "Publicar aviso"}</button>
+    </div>
+  </main>;
+
   return <main>
     <h2>Avisos</h2>
-    <p className="lead">Comunicados y asignaciones para {ingeniero.split(" ")[0]}.</p>
+    <p className="lead">{esCoordinador
+      ? "Comunicados publicados para el equipo."
+      : "Comunicados y asignaciones para " + ingeniero.split(" ")[0] + "."}</p>
+
+    {esCoordinador && <button className="btn primary block" style={{ marginBottom: 10 }} onClick={abrirNuevo}>
+      Nuevo aviso</button>}
     <button className="btn ghost block" style={{ marginBottom: 14 }} onClick={cargar} disabled={cargando}>
       {cargando ? <><span className="spin" /> Consultando…</> : "Actualizar"}</button>
 
     {error && <div className="note bad">{error}</div>}
-    {!cargando && !avisos.length && !error &&
-      <div className="empty">No hay avisos por ahora.</div>}
+    {!cargando && !avisos.length && !error && <div className="empty">No hay avisos por ahora.</div>}
 
-    {avisos.map(a => <div className={"aviso " + (a.tipo || "informativo")} key={a.id}>
+    {avisos.map(a => <div className={"aviso " + (a.tipo || "informativo")} key={a.id}
+      style={a.activo === false ? { opacity: .5 } : null}>
       <h3>{a.titulo || "Aviso"}</h3>
       {a.mensaje && <p>{a.mensaje}</p>}
       <div className="meta">
         {a.fecha ? new Date(a.fecha).toLocaleDateString("es-MX", { day: "2-digit", month: "long", year: "numeric" }) : ""}
-        {a.paraTodos ? " · para todo el equipo" : " · personal"}
+        {esCoordinador
+          ? " · para " + (a.paraTodos ? "todo el equipo" : a.destinatario) + (a.activo === false ? " · oculto" : "")
+          : (a.paraTodos ? " · para todo el equipo" : " · personal")}
       </div>
+      {esCoordinador && <div className="actions" style={{ marginTop: 10 }}>
+        <button className="btn ghost" style={{ padding: "8px 12px", fontSize: 13 }} onClick={() => abrirEdicion(a)}>Editar</button>
+        <button className="btn ghost" style={{ padding: "8px 12px", fontSize: 13 }} onClick={() => alternar(a)}>
+          {a.activo === false ? "Mostrar" : "Ocultar"}</button>
+      </div>}
     </div>)}
   </main>;
 }
@@ -1325,10 +1384,19 @@ function App() {
     setEnviandoMsj(false);
   }, [hiloAbierto, ingeniero, esCoordinador, sesion, cargarMensajes, cargarHilos]);
 
+  const guardarAviso = useCallback(async datos => {
+    try {
+      await Api.post({ action: "avisoGuardar", ...datos, sesion });
+      await cargarAvisos();
+      avisar("Aviso publicado");
+      return true;
+    } catch (e) { avisar("No se pudo publicar: " + e.message, true); return false; }
+  }, [sesion]);
+
   const cargarAvisos = useCallback(async () => {
     setCargandoAvisos(true); setErrAvisos("");
     try {
-      const d = await Api.get({ action: "avisos", ingeniero });
+      const d = await Api.get({ action: "avisos", ingeniero, sesion });
       setAvisos(d.avisos || []);
       await Store.put("meta", { id: "avisos:" + ingeniero, items: d.avisos, ts: Date.now() });
     } catch (e) {
@@ -1337,7 +1405,7 @@ function App() {
       else setErrAvisos("No se pudieron consultar los avisos: " + e.message);
     }
     setCargandoAvisos(false);
-  }, [ingeniero]);
+  }, [ingeniero, sesion]);
 
   // Revisión periódica: relee el formulario cada 10 minutos y al volver a la app.
   // Así el mapeo de campos y el estado del proxy se verifican antes de que un
@@ -1437,7 +1505,9 @@ function App() {
       : tab === "cola" ? <ColaEnvio cola={cola} enviando={enviando} reintentar={() => procesarCola(true)}
           borrar={async id => { const o = await Store.one("outbox", id); await Store.del("outbox", id); if (o) await Store.put("drafts", { ...o, actualizada: Date.now() }); await refrescar(); avisar("Regresó a borradores"); }} />
       : tab === "envios" ? <MisEnvios ingeniero={ingeniero} enviados={enviados} cargar={cargarEnvios} cargando={cargandoEnvios} error={errEnvios} />
-      : tab === "avisos" ? <Avisos ingeniero={ingeniero} avisos={avisos} cargar={cargarAvisos} cargando={cargandoAvisos} error={errAvisos} />
+      : tab === "avisos" ? <Avisos ingeniero={ingeniero} avisos={avisos} cargar={cargarAvisos}
+          cargando={cargandoAvisos} error={errAvisos} esCoordinador={esCoordinador}
+          ingenieros={(mapa.ingeniero && mapa.ingeniero.opciones) || INGENIEROS} guardar={guardarAviso} />
       : tab === "chat" ? <Chat ingeniero={ingeniero} sesion={sesion} esCoordinador={esCoordinador}
           hilos={hilos} cargarHilos={cargarHilos} cargando={cargandoChat} error={errChat}
           hiloAbierto={hiloAbierto} abrirHilo={abrirHilo} cerrarHilo={() => { setHiloAbierto(null); cargarHilos(); }}
