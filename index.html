@@ -199,7 +199,7 @@ window.CONFIG = {
   // Token compartido: debe ser idéntico al del Apps Script
   TOKEN: "aiiPlCWrNHmMcqLQRrj9RK2QVnqfxSMzPYISzJ88dXNjB8Ys",
   FORM_ID: "260445478825062",
-  BUILD: "Rev.19"
+  BUILD: "Rev.20"
 };
 </script>
 
@@ -659,8 +659,9 @@ function Identificacion({ onListo, mapa, entrarCoordinador }) {
     if (e) { setErr(e); setPin(""); }
     setValidando(false);
   };
-  const lista = (mapa && mapa.ingeniero && mapa.ingeniero.opciones && mapa.ingeniero.opciones.length)
-    ? mapa.ingeniero.opciones : INGENIEROS;
+  const COORD = "Proyectos IA Biomédica";
+  const lista = ((mapa && mapa.ingeniero && mapa.ingeniero.opciones && mapa.ingeniero.opciones.length)
+    ? mapa.ingeniero.opciones : INGENIEROS).filter(i => norm(i) !== norm(COORD));
   return <main>
     <div className="center">
       <div style={{ letterSpacing: ".2em", fontSize: 12, color: "#8C99A6", textTransform: "uppercase" }}>Ingenieros Asociados</div>
@@ -1004,7 +1005,8 @@ function Avisos({ ingeniero, avisos, cargar, cargando, error, esCoordinador, ing
 }
 
 function Chat({ ingeniero, sesion, esCoordinador, hilos, cargarHilos, cargando, error,
-  hiloAbierto, abrirHilo, cerrarHilo, mensajes, enviarMensaje, enviando, pendientes, noLeidos }) {
+  hiloAbierto, abrirHilo, cerrarHilo, mensajes, enviarMensaje, enviando, pendientes, noLeidos, finalizar }) {
+  const [confirmando, setConfirmando] = useState(false);
   const [texto, setTexto] = useState("");
   const [nuevo, setNuevo] = useState(false);
   const [clave, setClave] = useState("");
@@ -1046,7 +1048,7 @@ function Chat({ ingeniero, sesion, esCoordinador, hilos, cargarHilos, cargando, 
     {!mensajes.length && <div className="empty">Todavía no hay mensajes. Escriba el primero.</div>}
     <div className="burbujas">
       {mensajes.map((m, i) => {
-        const mio = norm(m.autor) === norm(esCoordinador ? "Proyectos IA Biomédica" : ingeniero);
+        const mio = norm(m.autor) === norm(ingeniero);
         return <div className={"msj" + (mio ? " mio" : "")} key={m.ts + "_" + i}>
           {!mio && <div className="a">{m.autor}</div>}
           <div className="m">{m.mensaje}</div>
@@ -1061,6 +1063,18 @@ function Chat({ ingeniero, sesion, esCoordinador, hilos, cargarHilos, cargando, 
       <button className="btn primary" style={{ padding: "12px 18px" }} disabled={!texto.trim() || enviando} onClick={mandar}>
         {enviando ? <span className="spin" /> : "Enviar"}</button>
     </div>
+
+    {esCoordinador && (confirmando
+      ? <div className="note bad" style={{ marginTop: 14 }}>
+          Se van a borrar los {mensajes.length} mensajes de esta conversación para todos. No se puede deshacer.
+          <div className="actions" style={{ marginTop: 10 }}>
+            <button className="btn ghost" onClick={() => setConfirmando(false)}>Cancelar</button>
+            <button className="btn danger" onClick={() => { setConfirmando(false); finalizar(hiloAbierto); }}>
+              Sí, finalizar</button>
+          </div>
+        </div>
+      : <button className="btn danger ghost block" style={{ marginTop: 14 }} onClick={() => setConfirmando(true)}>
+          Finalizar conversación</button>)}
   </main>;
 
   return <main>
@@ -1393,6 +1407,15 @@ function App() {
     } catch (e) { avisar("No se pudo publicar: " + e.message, true); return false; }
   }, [sesion]);
 
+  const finalizarHilo = useCallback(async hilo => {
+    try {
+      await Api.post({ action: "chatEliminar", clave: hilo.clave, sesion });
+      setHiloAbierto(null); setMensajes([]);
+      await cargarHilos();
+      avisar("Conversación finalizada");
+    } catch (e) { avisar("No se pudo finalizar: " + e.message, true); }
+  }, [sesion, cargarHilos]);
+
   const cargarAvisos = useCallback(async () => {
     setCargandoAvisos(true); setErrAvisos("");
     try {
@@ -1512,10 +1535,16 @@ function App() {
           hilos={hilos} cargarHilos={cargarHilos} cargando={cargandoChat} error={errChat}
           hiloAbierto={hiloAbierto} abrirHilo={abrirHilo} cerrarHilo={() => { setHiloAbierto(null); cargarHilos(); }}
           mensajes={mensajes} enviarMensaje={enviarMensaje} enviando={enviandoMsj}
-          pendientes={colaChat.length} noLeidos={noLeidosPorHilo} />
+          pendientes={colaChat.length} noLeidos={noLeidosPorHilo} finalizar={finalizarHilo} />
       : <Ajustes ingeniero={ingeniero} esquema={esquema} mapa={mapa} faltantes={faltantes}
           estadoProxy={estadoProxy} ultimaRevision={ultimaRevision} recargar={() => leerEsquema(false)}
-          salir={async () => { await Store.del("meta", "ingeniero"); setIngeniero(""); }} />}
+          salir={async () => {
+            // Cerrar identidad debe cerrar también la sesión: si no, quien vuelva
+            // a entrar dentro de las 12 horas queda como coordinación sin PIN.
+            await Store.del("meta", "ingeniero");
+            await Store.del("meta", "sesion");
+            setSesion(""); setIngeniero(""); setHilos([]); setHiloAbierto(null); setAvisos([]);
+          }} />}
 
     {toast && <div className={"toast" + (toast.malo ? " bad" : "")}>{toast.msg}</div>}
 
