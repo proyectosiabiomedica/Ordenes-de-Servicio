@@ -199,7 +199,7 @@ window.CONFIG = {
   // Token compartido: debe ser idéntico al del Apps Script
   TOKEN: "aiiPlCWrNHmMcqLQRrj9RK2QVnqfxSMzPYISzJ88dXNjB8Ys",
   FORM_ID: "260445478825062",
-  BUILD: "Rev.21"
+  BUILD: "Rev.23"
 };
 </script>
 
@@ -332,7 +332,7 @@ const Api = {
    el qid real se resuelve contra el esquema descargado.
    ========================================================== */
 const ESTADOS = ["Aguascalientes","Baja California","Baja California Sur","Campeche","Chiapas","Chihuahua","Ciudad de México","Coahuila","Colima","Durango","Estado de México","Guanajuato","Guerrero","Hidalgo","Jalisco","Michoacán","Morelos","Nayarit","Nuevo León","Oaxaca","Puebla","Querétaro","Quintana Roo","San Luis Potosí","Sinaloa","Sonora","Tabasco","Tamaulipas","Tlaxcala","Veracruz","Yucatán","Zacatecas"];
-const INGENIEROS = ["Arturo Maldonado Martínez","Daniel Cortez Perez","Edson Alfonso Corona Dávalos","Erick Geovanni Serrano Espíndola","Joaquín García Rojel","Martín Parra Chino","Proyectos IA Biomédica"];
+const INGENIEROS = ["Arturo Maldonado Martínez","Daniel Cortez Perez","Edson Alfonso Corona Dávalos","Erick Geovanni Serrano Espíndola","Joaquín García Rojel","Martín Parra Chino"];
 
 const SECCIONES = [
 { id:"fecha", titulo:"Fecha de servicio", campos:[
@@ -418,7 +418,10 @@ function nuevaOrden(ingeniero) {
     v[c.k] = c.tipo === "checks" ? [] : c.tipo === "fotos" ? [] : c.tipo === "tabla" ? [{ m: "", prog: "", desp: "", med: "" }] : c.tipo === "datetime" ? { fecha: hoyISO(), hora: horaISO() } : "";
   });
   v.ingeniero = ingeniero || "";
-  return { id: uid(), creada: Date.now(), actualizada: Date.now(), seccion: 0, valores: v };
+  // El folio acompaña a la orden toda su vida. Es lo que permite al proxy saber
+  // si un reintento corresponde a algo que ya se registró, y así no duplicarlo.
+  return { id: uid(), folio: "IAB-" + Math.floor(10000 + Math.random() * 90000),
+    creada: Date.now(), actualizada: Date.now(), seccion: 0, valores: v };
 }
 
 /* Resuelve cada campo contra el esquema real del formulario */
@@ -758,7 +761,8 @@ function ListaBorradores({ borradores, abrir, borrar, nuevo, mapa, enviar }) {
           <div style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
             <div className="body" onClick={() => abrir(b)} style={{ cursor: "pointer" }}>
               <div className="t">{v.equipo || "Equipo sin capturar"}</div>
-              <div className="s">{v.unidad || "Unidad sin capturar"} · {v.inventario || "s/inv"}<br />Editado {fmtFecha(b.actualizada)}</div>
+              <div className="s">{v.unidad || "Unidad sin capturar"} · {v.inventario || "s/inv"}<br />
+              {b.folio ? b.folio + " · " : ""}Editado {fmtFecha(b.actualizada)}</div>
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 6, alignItems: "flex-end" }}>
               <span className={"tag " + (pend ? "pend" : "ok")}>{pend ? pend + " pend." : "lista"}</span>
@@ -786,7 +790,7 @@ function ColaEnvio({ cola, reintentar, borrar, enviando }) {
         {cola.map(o => <div className="item" key={o.id}>
           <div className="body">
             <div className="t">{o.valores.equipo || "Equipo"}</div>
-            <div className="s">{o.valores.unidad || "—"} · {o.valores.inventario || "s/inv"}<br />
+            <div className="s">{o.folio ? o.folio + " · " : ""}{o.valores.unidad || "—"} · {o.valores.inventario || "s/inv"}<br />
               {o.error ? <span style={{ color: "var(--alert)" }}>{o.error}</span> : "En espera de conexión"}<br />
               Intentos: {o.intentos || 0}</div>
           </div>
@@ -1032,7 +1036,7 @@ function Chat({ ingeniero, sesion, esCoordinador, hilos, cargarHilos, cargando, 
     <div className="card">
       <label className="f"><span className="lb">Inventario o folio <em>*</em></span>
         <input type="text" value={clave} onChange={e => setClave(e.target.value.toUpperCase())}
-          placeholder="IAB-24478" /></label>
+          placeholder="PAT396 o IAB-24478" /></label>
       <label className="f"><span className="lb">Asunto <em>*</em></span>
         <input type="text" value={titulo} onChange={e => setTitulo(e.target.value)}
           placeholder="Monitor de signos vitales, UCIN" /></label>
@@ -1246,7 +1250,9 @@ function App() {
 
   const leerEsquema = useCallback(async (silencio) => {
     try {
-      const d = await Api.get({ action: "schema" });
+      // Al pedirlo a mano se salta la caché del proxy: es lo que se espera de
+      // un botón llamado "Releer formulario".
+      const d = await Api.get(silencio ? { action: "schema" } : { action: "schema", fresco: "1" });
       setEsquema(d.questions); setEstadoProxy("conectado"); setUltimaRevision(Date.now());
       await Store.put("meta", { id: "schema", questions: d.questions, ts: Date.now() });
       if (!silencio) avisar("Formulario leído: " + Object.keys(d.questions).length + " preguntas");
@@ -1307,9 +1313,15 @@ function App() {
 
   const enviarUno = async o => {
     const payload = construirPayload(o.valores, mapa);
+    // Los borradores creados antes de esta versión no traen folio: se les asigna
+    // uno y se guarda, para que un reintento posterior tampoco duplique.
+    if (!o.folio) {
+      o.folio = "IAB-" + Math.floor(10000 + Math.random() * 90000);
+      await Store.put("outbox", o);
+    }
     const fotos = (o.valores.fotos || []).map(f => ({ nombre: f.nombre, dataUrl: f.dataUrl }));
     const campoFotos = mapa.fotos ? mapa.fotos.qid : null;
-    const r = await Api.post({ action: "submit", answers: payload, fotos, campoFotos, cliente: o.id });
+    const r = await Api.post({ action: "submit", answers: payload, fotos, campoFotos, cliente: o.id, folio: o.folio });
     return r;
   };
 
