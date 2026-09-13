@@ -199,7 +199,7 @@ window.CONFIG = {
   // Token compartido: debe ser idéntico al del Apps Script
   TOKEN: "aiiPlCWrNHmMcqLQRrj9RK2QVnqfxSMzPYISzJ88dXNjB8Ys",
   FORM_ID: "260445478825062",
-  BUILD: "Rev.23"
+  BUILD: "Rev.25"
 };
 </script>
 
@@ -649,47 +649,45 @@ function FotosCampo({ c, valor, set, obligatorio }) {
 /* ==========================================================
    6. PANTALLAS
    ========================================================== */
-function Identificacion({ onListo, mapa, entrarCoordinador }) {
+function Identificacion({ onEntrar, usuarios, recargar, cargando }) {
   const [n, setN] = useState("");
-  const [pin, setPin] = useState("");
-  const [modo, setModo] = useState("ingeniero");
+  const [nip, setNip] = useState("");
   const [err, setErr] = useState("");
   const [validando, setValidando] = useState(false);
 
   const entrar = async () => {
     setValidando(true); setErr("");
-    const e = await entrarCoordinador(pin);
-    if (e) { setErr(e); setPin(""); }
+    const e = await onEntrar(n, nip);
+    if (e) { setErr(e); setNip(""); }
     setValidando(false);
   };
-  const COORD = "Proyectos IA Biomédica";
-  const lista = ((mapa && mapa.ingeniero && mapa.ingeniero.opciones && mapa.ingeniero.opciones.length)
-    ? mapa.ingeniero.opciones : INGENIEROS).filter(i => norm(i) !== norm(COORD));
+
   return <main>
     <div className="center">
-      <div style={{ letterSpacing: ".2em", fontSize: 12, color: "#8C99A6", textTransform: "uppercase" }}>Ingenieros Asociados</div>
+      <div style={{ letterSpacing: ".2em", fontSize: 12, color: "var(--muted)", textTransform: "uppercase" }}>Ingenieros Asociados</div>
       <h1 style={{ fontSize: 26, margin: 0, letterSpacing: "-.01em" }}>Orden de Trabajo</h1>
-      <p className="lead" style={{ maxWidth: 320 }}>Elija su nombre. Queda guardado en este dispositivo para filtrar sus borradores y envíos.</p>
+      <p className="lead" style={{ maxWidth: 320 }}>Elija su usuario y escriba su NIP de 4 dígitos.</p>
+
       <div style={{ width: "100%", maxWidth: 380 }}>
-        {modo === "ingeniero" ? <>
-          <select value={n} onChange={e => setN(e.target.value)}>
-            <option value="">Seleccione ingeniero</option>
-            {lista.map(i => <option key={i} value={i}>{i}</option>)}
-          </select>
-          <button className="btn primary block" style={{ marginTop: 12 }} disabled={!n} onClick={() => onListo(n)}>Entrar</button>
-          <button className="btn ghost block" style={{ marginTop: 10 }} onClick={() => { setModo("coordinador"); setErr(""); }}>
-            Entrar como coordinación</button>
-        </> : <>
-          <p className="lead" style={{ marginBottom: 10 }}>Proyectos IA Biomédica · PIN de 4 dígitos</p>
-          <input type="password" inputMode="numeric" maxLength={4} value={pin}
-            onChange={e => setPin(e.target.value.replace(/\D/g, ""))}
-            style={{ textAlign: "center", letterSpacing: ".5em", fontSize: 22 }} />
-          {err && <div className="note bad" style={{ marginTop: 10 }}>{err}</div>}
-          <button className="btn primary block" style={{ marginTop: 12 }} disabled={pin.length !== 4 || validando} onClick={entrar}>
-            {validando ? <span className="spin" /> : "Entrar"}</button>
-          <button className="btn ghost block" style={{ marginTop: 10 }} onClick={() => { setModo("ingeniero"); setErr(""); }}>
-            Volver</button>
-        </>}
+        <select value={n} onChange={e => { setN(e.target.value); setErr(""); }}>
+          <option value="">Seleccione usuario</option>
+          {usuarios.map(u => <option key={u.nombre} value={u.nombre}>{u.nombre}</option>)}
+        </select>
+
+        <input type="password" inputMode="numeric" maxLength={4} value={nip}
+          onChange={e => setNip(e.target.value.replace(/\D/g, ""))}
+          placeholder="NIP"
+          style={{ marginTop: 12, textAlign: "center", letterSpacing: ".5em", fontSize: 22 }} />
+
+        {err && <div className="note bad" style={{ marginTop: 10 }}>{err}</div>}
+
+        <button className="btn primary block" style={{ marginTop: 12 }}
+          disabled={!n || nip.length !== 4 || validando} onClick={entrar}>
+          {validando ? <span className="spin" /> : "Entrar"}</button>
+
+        {!usuarios.length && <button className="btn ghost block" style={{ marginTop: 10 }}
+          onClick={recargar} disabled={cargando}>
+          {cargando ? <span className="spin" /> : "Cargar lista de usuarios"}</button>}
       </div>
     </div>
   </main>;
@@ -763,6 +761,8 @@ function ListaBorradores({ borradores, abrir, borrar, nuevo, mapa, enviar }) {
               <div className="t">{v.equipo || "Equipo sin capturar"}</div>
               <div className="s">{v.unidad || "Unidad sin capturar"} · {v.inventario || "s/inv"}<br />
               {b.folio ? b.folio + " · " : ""}Editado {fmtFecha(b.actualizada)}</div>
+            {b.errorEnvio && <div className="s" style={{ color: "var(--alert)", marginTop: 5 }}>
+              No se envió: {b.errorEnvio}</div>}
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 6, alignItems: "flex-end" }}>
               <span className={"tag " + (pend ? "pend" : "ok")}>{pend ? pend + " pend." : "lista"}</span>
@@ -771,7 +771,7 @@ function ListaBorradores({ borradores, abrir, borrar, nuevo, mapa, enviar }) {
           </div>
           {/* Una orden completa se puede mandar sin volver a abrirla paso por paso */}
           {!pend && <button className="btn primary block" style={{ marginTop: 10 }}
-            onClick={() => enviar(b)}>Enviar esta orden</button>}
+            onClick={() => enviar(b)}>{b.errorEnvio ? "Reintentar el envío" : "Enviar esta orden"}</button>}
         </div>;
       })}
   </main>;
@@ -1008,6 +1008,91 @@ function Avisos({ ingeniero, avisos, cargar, cargando, error, esCoordinador, ing
   </main>;
 }
 
+function Usuarios({ usuarios, cargar, cargando, error, guardar, ingenieros, yo }) {
+  const [editando, setEditando] = useState(null);
+  const [guardando, setGuardando] = useState(false);
+  const [u, setU] = useState({ nombre: "", nip: "", rol: "operador", activo: true, correo: "" });
+  useEffect(() => { cargar(); }, []);
+
+  const nuevo = () => { setU({ nombre: "", nip: "", rol: "operador", activo: true, correo: "" }); setEditando("nuevo"); };
+  const editar = x => { setU({ fila: x.fila, nombre: x.nombre, nip: "", rol: x.rol, activo: x.activo, correo: x.correo || "" }); setEditando(x.fila); };
+  const aplicar = async () => {
+    setGuardando(true);
+    const ok = await guardar(u);
+    setGuardando(false);
+    if (ok) setEditando(null);
+  };
+
+  if (editando) return <main>
+    <button className="btn ghost" onClick={() => setEditando(null)} style={{ marginBottom: 12 }}>← Volver</button>
+    <h2>{editando === "nuevo" ? "Nuevo usuario" : "Editar usuario"}</h2>
+    <p className="lead">{editando === "nuevo"
+      ? "El nombre debe coincidir con la lista de ingenieros del formulario para que sus órdenes se registren a su nombre."
+      : "Deje el NIP vacío si no quiere cambiarlo."}</p>
+    <div className="card">
+      {editando === "nuevo"
+        ? <label className="f"><span className="lb">Nombre <em>*</em></span>
+            <select value={u.nombre} onChange={e => setU({ ...u, nombre: e.target.value })}>
+              <option value="">Seleccione de la lista del formulario</option>
+              {ingenieros.map(i => <option key={i} value={i}>{i}</option>)}
+              <option value="__otro">Otro (escribir a mano)</option>
+            </select></label>
+        : <label className="f"><span className="lb">Nombre</span>
+            <input type="text" value={u.nombre} onChange={e => setU({ ...u, nombre: e.target.value })} /></label>}
+
+      {u.nombre === "__otro" && <label className="f"><span className="lb">Nombre a mano <em>*</em></span>
+        <input type="text" value={u.nombreLibre || ""} autoFocus
+          onChange={e => setU({ ...u, nombreLibre: e.target.value })} /></label>}
+
+      <label className="f"><span className="lb">NIP de 4 dígitos {editando === "nuevo" && <em>*</em>}</span>
+        <input type="text" inputMode="numeric" maxLength={4} value={u.nip}
+          onChange={e => setU({ ...u, nip: e.target.value.replace(/\D/g, "") })}
+          placeholder={editando === "nuevo" ? "1234" : "Sin cambios"} /></label>
+
+      <label className="f"><span className="lb">Rol</span>
+        <select value={u.rol} onChange={e => setU({ ...u, rol: e.target.value })}>
+          <option value="operador">Operador · captura sus órdenes</option>
+          <option value="administrador">Administrador · gestiona todo</option>
+        </select></label>
+
+      <label className="f"><span className="lb">Correo (opcional)</span>
+        <input type="email" value={u.correo} onChange={e => setU({ ...u, correo: e.target.value })} /></label>
+
+      <div className="chips" style={{ marginBottom: 14 }}>
+        <button type="button" className="chip" aria-pressed={u.activo} onClick={() => setU({ ...u, activo: true })}>Activo</button>
+        <button type="button" className="chip neg" aria-pressed={!u.activo} onClick={() => setU({ ...u, activo: false })}>Dado de baja</button>
+      </div>
+
+      <button className="btn primary block" disabled={guardando ||
+        (u.nombre === "__otro" ? !(u.nombreLibre || "").trim() : !u.nombre) ||
+        (editando === "nuevo" && u.nip.length !== 4) ||
+        (u.nip.length > 0 && u.nip.length !== 4)}
+        onClick={aplicar}>{guardando ? <span className="spin" /> : "Guardar usuario"}</button>
+    </div>
+  </main>;
+
+  return <main>
+    <h2>Usuarios</h2>
+    <p className="lead">Quién puede entrar a la app y con qué permisos.</p>
+    <button className="btn primary block" style={{ marginBottom: 10 }} onClick={nuevo}>Nuevo usuario</button>
+    <button className="btn ghost block" style={{ marginBottom: 14 }} onClick={cargar} disabled={cargando}>
+      {cargando ? <><span className="spin" /> Consultando…</> : "Actualizar"}</button>
+
+    {error && <div className="note bad">{error}</div>}
+    {!cargando && !usuarios.length && !error && <div className="empty">No hay usuarios registrados.</div>}
+
+    {usuarios.map(x => <div className="item" key={x.fila} style={x.activo ? null : { opacity: .55 }}>
+      <div className="body" onClick={() => editar(x)} style={{ cursor: "pointer" }}>
+        <div className="t">{x.nombre}{norm(x.nombre) === norm(yo) ? " (usted)" : ""}</div>
+        <div className="s">{x.rol === "administrador" ? "Administrador" : "Operador"}
+          {x.correo ? " · " + x.correo : ""}<br />
+          {x.activo ? "Activo" : "Dado de baja"}{x.tieneNip ? "" : " · sin NIP"}</div>
+      </div>
+      <span className={"tag " + (x.rol === "administrador" ? "pend" : "")}>{x.rol === "administrador" ? "admin" : "operador"}</span>
+    </div>)}
+  </main>;
+}
+
 function Chat({ ingeniero, sesion, esCoordinador, hilos, cargarHilos, cargando, error,
   hiloAbierto, abrirHilo, cerrarHilo, mensajes, enviarMensaje, enviando, pendientes, noLeidos,
   finalizar, ingenieros, reasignar }) {
@@ -1133,7 +1218,7 @@ function Chat({ ingeniero, sesion, esCoordinador, hilos, cargarHilos, cargando, 
   </main>;
 }
 
-function Ajustes({ ingeniero, salir, esquema, faltantes, mapa, recargar, estadoProxy, ultimaRevision }) {
+function Ajustes({ ingeniero, salir, esquema, faltantes, mapa, recargar, estadoProxy, ultimaRevision, rol, verUsuarios }) {
   const [prueba, setPrueba] = useState(null);
   const probar = async () => {
     setPrueba({ ok: null, texto: "Probando…" });
@@ -1166,7 +1251,8 @@ function Ajustes({ ingeniero, salir, esquema, faltantes, mapa, recargar, estadoP
 
     <div className="card">
       <div className="kv">
-        <div><b>Ingeniero:</b> {ingeniero}</div>
+        <div><b>Usuario:</b> {ingeniero}</div>
+        <div><b>Rol:</b> {rol === "administrador" ? "Administrador" : "Operador"}</div>
         <div><b>Formulario:</b> {CONFIG.FORM_ID}</div>
         <div><b>Versión de la app:</b> {CONFIG.BUILD || "Rev.01"}</div>
         <div><b>Proxy en uso:</b> …{String(CONFIG.PROXY_URL).slice(-18)}</div>
@@ -1177,8 +1263,10 @@ function Ajustes({ ingeniero, salir, esquema, faltantes, mapa, recargar, estadoP
       </div>
       <div className="actions" style={{ marginTop: 12 }}>
         <button className="btn" onClick={recargar}>Releer formulario</button>
-        <button className="btn ghost" onClick={salir}>Cambiar de ingeniero</button>
+        <button className="btn ghost" onClick={salir}>Cerrar sesión</button>
       </div>
+      {rol === "administrador" && <button className="btn primary block" style={{ marginTop: 10 }}
+        onClick={verUsuarios}>Gestionar usuarios</button>}
       <button className="btn ghost block" style={{ marginTop: 10 }} onClick={probar}>Probar conexión</button>
       {prueba && prueba.ok !== null && <div className={"note" + (prueba.ok ? "" : " bad")} style={{ marginTop: 10 }}>
         {prueba.ok
@@ -1229,6 +1317,11 @@ function App() {
   const [errAvisos, setErrAvisos] = useState("");
   const [avisosVistos, setAvisosVistos] = useState(0);
   const [sesion, setSesion] = useState("");
+  const [rol, setRol] = useState("operador");
+  const [usuarios, setUsuarios] = useState([]);
+  const [usuariosAdmin, setUsuariosAdmin] = useState([]);
+  const [cargandoUsuarios, setCargandoUsuarios] = useState(false);
+  const [errUsuarios, setErrUsuarios] = useState("");
   const [hilos, setHilos] = useState([]);
   const [hiloAbierto, setHiloAbierto] = useState(null);
   const [mensajes, setMensajes] = useState([]);
@@ -1268,14 +1361,23 @@ function App() {
     (async () => {
       await Store.init();
       const g = await Store.one("meta", "ingeniero");
-      if (g) setIngeniero(g.valor);
+      const ses0 = await Store.one("meta", "sesion");
+      // Sin sesión vigente no hay identidad: la app siempre pide NIP al entrar.
+      if (g && ses0 && ses0.token && Date.now() - ses0.ts < 12 * 3600 * 1000) setIngeniero(g.valor);
       const c = await Store.one("meta", "schema");
       if (c) setEsquema(c.questions);
       const vistos = await Store.one("meta", "avisosVistos");
       if (vistos) setAvisosVistos(vistos.ts || 0);
       const ses = await Store.one("meta", "sesion");
-      // La sesión del coordinador dura 12 horas en el servidor
-      if (ses && ses.token && Date.now() - ses.ts < 12 * 3600 * 1000) setSesion(ses.token);
+      // La sesión dura 12 horas en el servidor. Al vencer se pide el NIP otra vez.
+      if (ses && ses.token && Date.now() - ses.ts < 12 * 3600 * 1000) {
+        setSesion(ses.token); setRol(ses.rol || "operador");
+      } else if (ses) {
+        await Store.del("meta", "sesion");
+        await Store.del("meta", "ingeniero");
+      }
+      const up = await Store.one("meta", "usuariosPublicos");
+      if (up) setUsuarios(up.items || []);
       const l = await Store.one("meta", "leidos");
       if (l) setLeidos(l.mapa || {});
       setColaChat(await Store.all("chatCola"));
@@ -1286,6 +1388,7 @@ function App() {
       await refrescar();
       setListo(true);
       leerEsquema(true);
+      if (!ses0 || !ses0.token) cargarUsuariosPublicos();
     })();
     const on = () => setOnline(true), off = () => setOnline(false);
     window.addEventListener("online", on); window.addEventListener("offline", off);
@@ -1293,17 +1396,48 @@ function App() {
   }, []);
 
 
-  const elegirIngeniero = async n => { await Store.put("meta", { id: "ingeniero", valor: n }); setIngeniero(n); };
-
-  const entrarCoordinador = async pin => {
+  const cargarUsuariosPublicos = useCallback(async () => {
+    setCargandoUsuarios(true);
     try {
-      const d = await Api.get({ action: "login", pin });
-      await Store.put("meta", { id: "sesion", token: d.sesion, nombre: d.nombre, ts: Date.now() });
+      const d = await Api.get({ action: "usuariosPublicos" });
+      setUsuarios(d.usuarios || []);
+      await Store.put("meta", { id: "usuariosPublicos", items: d.usuarios, ts: Date.now() });
+    } catch (e) {
+      const c = await Store.one("meta", "usuariosPublicos");
+      if (c) setUsuarios(c.items || []);
+    }
+    setCargandoUsuarios(false);
+  }, []);
+
+  const entrar = async (nombre, nip) => {
+    try {
+      const d = await Api.get({ action: "login", nombre, nip });
+      await Store.put("meta", { id: "sesion", token: d.sesion, nombre: d.nombre, rol: d.rol, ts: Date.now() });
       await Store.put("meta", { id: "ingeniero", valor: d.nombre });
-      setSesion(d.sesion); setIngeniero(d.nombre);
+      setSesion(d.sesion); setRol(d.rol); setIngeniero(d.nombre);
       return "";
     } catch (e) { return e.message; }
   };
+
+  const cargarUsuariosAdmin = useCallback(async () => {
+    setCargandoUsuarios(true); setErrUsuarios("");
+    try {
+      const d = await Api.get({ action: "usuarios", sesion });
+      setUsuariosAdmin(d.usuarios || []);
+    } catch (e) { setErrUsuarios(e.message); }
+    setCargandoUsuarios(false);
+  }, [sesion]);
+
+  const guardarUsuario = useCallback(async datos => {
+    try {
+      const nombre = datos.nombre === "__otro" ? (datos.nombreLibre || "").trim() : datos.nombre;
+      await Api.post({ action: "usuarioGuardar", ...datos, nombre, sesion });
+      await cargarUsuariosAdmin();
+      await cargarUsuariosPublicos();
+      avisar("Usuario guardado");
+      return true;
+    } catch (e) { avisar("No se pudo guardar: " + e.message, true); return false; }
+  }, [sesion, cargarUsuariosAdmin, cargarUsuariosPublicos]);
 
   const guardarBorrador = async (b, silencio) => {
     await Store.put("drafts", b);
@@ -1331,7 +1465,7 @@ function App() {
     if (!pend.length) { if (manual) avisar("No hay nada por enviar"); return; }
     if (!esquema) { if (manual) avisar("Primero hay que leer el formulario (Ajustes)", true); return; }
     setEnviando(true);
-    let ok = 0, fail = 0; const avisos = [];
+    let ok = 0, fail = 0, devueltas = 0; const avisos = [];
     for (const o of pend.sort((a, b) => a.creada - b.creada)) {
       try {
         const r = await enviarUno(o);
@@ -1340,27 +1474,45 @@ function App() {
         if (r.aviso) avisos.push(r.aviso);
         ok++;
       } catch (e) {
-        await Store.put("outbox", { ...o, intentos: (o.intentos || 0) + 1, error: e.message });
-        fail++;
+        // Sin señal la orden espera en la cola y se reintenta sola: ahí no hay
+        // riesgo de duplicar, porque el envío nunca llegó al servidor.
+        // Si el servidor respondió con error, la orden vuelve a borradores y el
+        // reenvío queda en manos del ingeniero. Reintentar solo sobre una respuesta
+        // ambigua es justo lo que generaba órdenes duplicadas.
+        const sinSenal = !navigator.onLine ||
+          /sin señal|no se pudo conectar|no pudo cargar el proxy|no respondió a tiempo/i.test(e.message);
+        if (sinSenal) {
+          await Store.put("outbox", { ...o, intentos: (o.intentos || 0) + 1, error: e.message });
+          fail++;
+        } else {
+          await Store.del("outbox", o.id);
+          await Store.put("drafts", { ...o, actualizada: Date.now(), errorEnvio: e.message });
+          devueltas++;
+        }
       }
     }
     setEnviando(false); await refrescar();
     if (avisos.length) avisar(avisos[0], true);
+    else if (devueltas) avisar(devueltas === 1
+      ? "La orden regresó a borradores. Revísela y vuelva a enviarla."
+      : devueltas + " órdenes regresaron a borradores.", true);
     else if (ok && !fail) avisar(ok === 1 ? "Orden enviada a Jotform" : ok + " órdenes enviadas");
-    else if (ok && fail) avisar(`${ok} enviada(s), ${fail} sigue(n) en cola`, true);
-    else if (fail) avisar("No se pudo enviar. Queda en cola.", true);
+    else if (ok && fail) avisar(`${ok} enviada(s), ${fail} espera(n) señal`, true);
+    else if (fail) avisar("Sin señal. La orden espera y se enviará al reconectar.", true);
   }, [enviando, esquema, mapa, refrescar]);
 
   useEffect(() => { if (online && listo && esquema) procesarCola(false); }, [online, listo, esquema]);
 
   const encolar = async b => {
-    await Store.put("outbox", { ...b, creada: Date.now(), intentos: 0, error: "" });
+    await Store.put("outbox", { ...b, creada: Date.now(), intentos: 0, error: "", errorEnvio: "" });
     await Store.del("drafts", b.id);
     setEditando(null); setTab("cola"); await refrescar();
     procesarCola(false);
   };
 
-  const esCoordinador = !!sesion;
+  // El rol viene del servidor; la app solo lo refleja. Un administrador ve todo,
+  // un operador solo sus órdenes y sus conversaciones.
+  const esCoordinador = rol === "administrador";
 
   const cargarHilos = useCallback(async () => {
     setCargandoChat(true); setErrChat("");
@@ -1520,8 +1672,8 @@ function App() {
   }, [ingeniero]);
 
   if (!listo) return <div className="center"><span className="spin" /></div>;
-  if (!ingeniero) return <Identificacion onListo={elegirIngeniero} mapa={mapa}
-    entrarCoordinador={entrarCoordinador} />;
+  if (!ingeniero) return <Identificacion onEntrar={entrar} usuarios={usuarios}
+    recargar={cargarUsuariosPublicos} cargando={cargandoUsuarios} />;
 
   const noLeidosPorHilo = {};
   hilos.forEach(h => {
@@ -1575,6 +1727,9 @@ function App() {
       : tab === "avisos" ? <Avisos ingeniero={ingeniero} avisos={avisos} cargar={cargarAvisos}
           cargando={cargandoAvisos} error={errAvisos} esCoordinador={esCoordinador}
           ingenieros={(mapa.ingeniero && mapa.ingeniero.opciones) || INGENIEROS} guardar={guardarAviso} />
+      : tab === "usuarios" ? <Usuarios usuarios={usuariosAdmin} cargar={cargarUsuariosAdmin}
+          cargando={cargandoUsuarios} error={errUsuarios} guardar={guardarUsuario} yo={ingeniero}
+          ingenieros={(mapa.ingeniero && mapa.ingeniero.opciones) || INGENIEROS} />
       : tab === "chat" ? <Chat ingeniero={ingeniero} sesion={sesion} esCoordinador={esCoordinador}
           hilos={hilos} cargarHilos={cargarHilos} cargando={cargandoChat} error={errChat}
           hiloAbierto={hiloAbierto} abrirHilo={abrirHilo} cerrarHilo={() => { setHiloAbierto(null); cargarHilos(); }}
@@ -1583,12 +1738,14 @@ function App() {
           ingenieros={(mapa.ingeniero && mapa.ingeniero.opciones) || INGENIEROS} reasignar={reasignarHilo} />
       : <Ajustes ingeniero={ingeniero} esquema={esquema} mapa={mapa} faltantes={faltantes}
           estadoProxy={estadoProxy} ultimaRevision={ultimaRevision} recargar={() => leerEsquema(false)}
+          rol={rol} verUsuarios={() => setTab("usuarios")}
           salir={async () => {
             // Cerrar identidad debe cerrar también la sesión: si no, quien vuelva
             // a entrar dentro de las 12 horas queda como coordinación sin PIN.
             await Store.del("meta", "ingeniero");
             await Store.del("meta", "sesion");
-            setSesion(""); setIngeniero(""); setHilos([]); setHiloAbierto(null); setAvisos([]);
+            setSesion(""); setRol("operador"); setIngeniero("");
+            setHilos([]); setHiloAbierto(null); setAvisos([]); setUsuariosAdmin([]);
           }} />}
 
     {toast && <div className={"toast" + (toast.malo ? " bad" : "")}>{toast.msg}</div>}
