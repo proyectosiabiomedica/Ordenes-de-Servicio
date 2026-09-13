@@ -131,6 +131,31 @@ nav.tabs .badge{position:absolute;top:5px;right:calc(50% - 20px);background:var(
 .note.bad{border-color:var(--alert);background:#2B1A18;color:#F8D8D2}
 .toast{position:fixed;left:14px;right:14px;bottom:calc(84px + var(--safe-b));z-index:60;background:var(--panel-2);border:1px solid var(--line);border-left:3px solid var(--mint);border-radius:8px;padding:12px 14px;font-size:13.5px;box-shadow:0 10px 30px rgba(0,0,0,.5)}
 .toast.bad{border-left-color:var(--alert)}
+/* Tablero: columnas con desplazamiento horizontal, una a la vez en el celular */
+.kanban{display:flex;gap:10px;overflow-x:auto;padding-bottom:8px;scroll-snap-type:x mandatory;-webkit-overflow-scrolling:touch}
+.kcol{flex:0 0 84%;max-width:340px;scroll-snap-align:start;background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:11px}
+.kcol h3{margin:0 0 10px;font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);font-weight:700;display:flex;justify-content:space-between}
+.kcol h3 b{color:var(--text);font-weight:700}
+.tarea{background:var(--panel-2);border:1px solid var(--line);border-left:3px solid var(--mint);border-radius:8px;padding:10px 11px;margin-bottom:8px;cursor:pointer}
+.tarea.alta{border-left-color:var(--alert)}
+.tarea.media{border-left-color:#FF9F43}
+.tarea.estandar{border-left-color:var(--mint)}
+.tarea .t{font-size:14px;font-weight:600;line-height:1.3;margin-bottom:4px}
+.tarea .d{font-size:11.5px;color:var(--muted);font-family:var(--mono);line-height:1.5}
+.vistas{display:flex;gap:6px;margin-bottom:14px}
+.vistas button{flex:1;background:var(--panel-2);border:1px solid var(--line);border-radius:8px;padding:9px;font-size:13px;font-weight:600;cursor:pointer;color:var(--muted)}
+.vistas button[aria-pressed=true]{background:var(--amber);border-color:var(--amber);color:#06182A}
+/* Calendario */
+.cal{display:grid;grid-template-columns:repeat(7,1fr);gap:3px}
+.cal .dn{font-size:9.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);text-align:center;padding:4px 0;font-weight:700}
+.cal .dia{aspect-ratio:1;background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:3px;font-size:11px;display:flex;flex-direction:column;gap:2px;cursor:pointer}
+.cal .dia.vacio{background:none;border-color:transparent;cursor:default}
+.cal .dia.hoy{border-color:var(--amber)}
+.cal .dia .n{font-family:var(--mono);color:var(--muted);font-size:10px}
+.cal .dia .p{height:4px;border-radius:2px;background:var(--mint)}
+.cal .dia .p.alta{background:var(--alert)} .cal .dia .p.media{background:#FF9F43}
+.mescab{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
+.mescab b{font-size:15px;text-transform:capitalize}
 .hilo{display:flex;gap:12px;align-items:flex-start;background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:12px 13px;margin-bottom:9px;cursor:pointer}
 .hilo .body{flex:1;min-width:0}
 .hilo .t{font-weight:600;font-size:14.5px;margin-bottom:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -199,7 +224,7 @@ window.CONFIG = {
   // Token compartido: debe ser idéntico al del Apps Script
   TOKEN: "aiiPlCWrNHmMcqLQRrj9RK2QVnqfxSMzPYISzJ88dXNjB8Ys",
   FORM_ID: "260445478825062",
-  BUILD: "Rev.25"
+  BUILD: "Rev.26"
 };
 </script>
 
@@ -746,11 +771,29 @@ function Formulario({ borrador, guardar, enviar, cancelar, mapa, faltantes }) {
   </main>;
 }
 
-function ListaBorradores({ borradores, abrir, borrar, nuevo, mapa, enviar }) {
+function ListaBorradores({ borradores, abrir, borrar, nuevo, mapa, enviar, cola, enviando, reintentar, devolver }) {
   return <main>
     <h2>Borradores</h2>
     <p className="lead">Órdenes sin terminar guardadas en este teléfono. Nada se pierde si cierra la app o se queda sin señal.</p>
     <button className="btn primary block" style={{ marginBottom: 14 }} onClick={nuevo}>Nueva orden de trabajo</button>
+
+    {/* Las órdenes en cola solo esperan señal: el resto vuelve solo a borradores */}
+    {!!cola.length && <>
+      <h2 style={{ marginTop: 4 }}>Esperando señal</h2>
+      <p className="lead">Se envían solas al reconectar.</p>
+      <button className="btn block" style={{ marginBottom: 10 }} disabled={enviando} onClick={reintentar}>
+        {enviando ? <><span className="spin" /> Enviando…</> : "Intentar ahora"}</button>
+      {cola.map(o => <div className="item" key={o.id}>
+        <div className="body">
+          <div className="t">{o.valores.equipo || "Equipo"}</div>
+          <div className="s">{o.folio ? o.folio + " · " : ""}{o.valores.unidad || "—"}<br />
+            {o.error ? <span style={{ color: "var(--alert)" }}>{o.error}</span> : "En espera de conexión"}</div>
+        </div>
+        <button className="btn ghost" style={{ padding: "6px 10px", fontSize: 12 }} onClick={() => devolver(o.id)}>
+          A borradores</button>
+      </div>)}
+      <h2 style={{ marginTop: 18 }}>Sin terminar</h2>
+    </>}
     {!borradores.length
       ? <div className="empty">No hay borradores.<br />Empiece una orden y quedará aquí en cuanto escriba el primer dato.</div>
       : borradores.map(b => {
@@ -774,32 +817,6 @@ function ListaBorradores({ borradores, abrir, borrar, nuevo, mapa, enviar }) {
             onClick={() => enviar(b)}>{b.errorEnvio ? "Reintentar el envío" : "Enviar esta orden"}</button>}
         </div>;
       })}
-  </main>;
-}
-
-function ColaEnvio({ cola, reintentar, borrar, enviando }) {
-  return <main>
-    <h2>Por enviar</h2>
-    <p className="lead">Órdenes terminadas que esperan señal. Se reintentan solas al recuperar conexión.</p>
-    {!cola.length
-      ? <div className="empty">Nada en espera. Todo lo terminado ya está en Jotform.</div>
-      : <>
-        <button className="btn primary block" style={{ marginBottom: 14 }} disabled={enviando} onClick={reintentar}>
-          {enviando ? <><span className="spin" /> Enviando…</> : "Reintentar ahora"}
-        </button>
-        {cola.map(o => <div className="item" key={o.id}>
-          <div className="body">
-            <div className="t">{o.valores.equipo || "Equipo"}</div>
-            <div className="s">{o.folio ? o.folio + " · " : ""}{o.valores.unidad || "—"} · {o.valores.inventario || "s/inv"}<br />
-              {o.error ? <span style={{ color: "var(--alert)" }}>{o.error}</span> : "En espera de conexión"}<br />
-              Intentos: {o.intentos || 0}</div>
-          </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 6, alignItems: "flex-end" }}>
-            <span className={"tag " + (o.error ? "err" : "pend")}>{o.error ? "falló" : "en cola"}</span>
-            <button className="btn danger ghost" style={{ padding: "6px 10px", fontSize: 12 }} onClick={() => borrar(o.id)}>Quitar</button>
-          </div>
-        </div>)}
-      </>}
   </main>;
 }
 
@@ -1005,6 +1022,193 @@ function Avisos({ ingeniero, avisos, cargar, cargando, error, esCoordinador, ing
           {a.activo === false ? "Mostrar" : "Ocultar"}</button>
       </div>}
     </div>)}
+  </main>;
+}
+
+const COLUMNAS = [
+  { k: "por_asignar", n: "Por asignar" },
+  { k: "asignada", n: "Asignada" },
+  { k: "en_proceso", n: "En proceso" },
+  { k: "terminada", n: "Terminada" }
+];
+const PRIORIDADES = [
+  { k: "alta", n: "Prioritaria" },
+  { k: "media", n: "Media" },
+  { k: "estandar", n: "Estándar" }
+];
+const MESES_N = ["enero", "febrero", "marzo", "abril", "mayo", "junio",
+  "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"];
+
+function Tablero({ tareas, cargar, cargando, error, esAdmin, yo, ingenieros, guardar, mover, eliminar }) {
+  const [vista, setVista] = useState("tablero");
+  const [abierta, setAbierta] = useState(null);
+  const [editando, setEditando] = useState(null);
+  const [guardando, setGuardando] = useState(false);
+  const [mes, setMes] = useState(() => { const d = new Date(); return { a: d.getFullYear(), m: d.getMonth() }; });
+  const [dia, setDia] = useState("");
+  const [t, setT] = useState({});
+  useEffect(() => { cargar(); }, []);
+
+  const vacia = { titulo: "", inicio: hoyISO(), fin: hoyISO(), ubicacion: "",
+    observaciones: "", prioridad: "estandar", asignado: "", estado: "por_asignar" };
+
+  const aplicar = async () => {
+    setGuardando(true);
+    const ok = await guardar(t);
+    setGuardando(false);
+    if (ok) { setEditando(null); setAbierta(null); }
+  };
+
+  // ---- Alta y edición ----
+  if (editando) return <main>
+    <button className="btn ghost" onClick={() => setEditando(null)} style={{ marginBottom: 12 }}>← Volver</button>
+    <h2>{t.fila ? "Editar tarea" : "Nueva tarea"}</h2>
+    <div className="card">
+      <label className="f"><span className="lb">Tarea <em>*</em></span>
+        <input type="text" value={t.titulo} onChange={e => setT({ ...t, titulo: e.target.value })}
+          placeholder="Mantenimiento preventivo, monitor PAT396" /></label>
+      <div className="row">
+        <label className="f"><span className="lb">Inicio</span>
+          <input type="date" value={t.inicio || ""} onChange={e => setT({ ...t, inicio: e.target.value })} /></label>
+        <label className="f"><span className="lb">Fin</span>
+          <input type="date" value={t.fin || ""} onChange={e => setT({ ...t, fin: e.target.value })} /></label>
+      </div>
+      <label className="f"><span className="lb">Ubicación</span>
+        <input type="text" value={t.ubicacion || ""} onChange={e => setT({ ...t, ubicacion: e.target.value })}
+          placeholder="Hospital, área" /></label>
+      <div className="f"><span className="lb">Prioridad</span>
+        <div className="chips">{PRIORIDADES.map(p =>
+          <button key={p.k} type="button" className={"chip" + (p.k === "alta" ? " neg" : "")}
+            aria-pressed={t.prioridad === p.k} onClick={() => setT({ ...t, prioridad: p.k })}>{p.n}</button>)}
+        </div></div>
+      <label className="f"><span className="lb">Asignar a</span>
+        <select value={t.asignado || ""} onChange={e => setT({ ...t, asignado: e.target.value })}>
+          <option value="">Sin asignar</option>
+          {ingenieros.map(i => <option key={i} value={i}>{i}</option>)}
+        </select></label>
+      <label className="f"><span className="lb">Observaciones</span>
+        <textarea value={t.observaciones || ""} onChange={e => setT({ ...t, observaciones: e.target.value })} /></label>
+      <button className="btn primary block" disabled={!(t.titulo || "").trim() || guardando} onClick={aplicar}>
+        {guardando ? <span className="spin" /> : "Guardar tarea"}</button>
+    </div>
+  </main>;
+
+  // ---- Ficha ----
+  if (abierta) {
+    const col = COLUMNAS.find(c => c.k === abierta.estado);
+    const puedeMover = esAdmin || norm(abierta.asignado) === norm(yo);
+    return <main>
+      <button className="btn ghost" onClick={() => setAbierta(null)} style={{ marginBottom: 12 }}>← Tablero</button>
+      <h2>{abierta.titulo}</h2>
+      <p className="lead">{(PRIORIDADES.find(p => p.k === abierta.prioridad) || {}).n} · {col ? col.n : abierta.estado}</p>
+      <div className="card"><div className="kv">
+        <div><b>Inicio:</b> {abierta.inicio || "—"}</div>
+        <div><b>Fin:</b> {abierta.fin || "—"}</div>
+        <div><b>Ubicación:</b> {abierta.ubicacion || "—"}</div>
+        <div><b>Asignada a:</b> {abierta.asignado || "sin asignar"}</div>
+        {esAdmin && <div><b>Asignó:</b> {abierta.asignadoPor || "—"}</div>}
+        {abierta.observaciones && <div style={{ marginTop: 8 }}><b>Observaciones:</b><br />{abierta.observaciones}</div>}
+      </div></div>
+
+      {puedeMover && <>
+        <h2 style={{ marginTop: 18 }}>Mover a</h2>
+        <div className="chips" style={{ marginBottom: 14 }}>
+          {COLUMNAS.map(c => <button key={c.k} type="button" className="chip"
+            aria-pressed={abierta.estado === c.k}
+            onClick={() => { mover(abierta, c.k); setAbierta({ ...abierta, estado: c.k }); }}>{c.n}</button>)}
+        </div>
+      </>}
+      {!puedeMover && <div className="note">Esta tarea no está asignada a usted.</div>}
+
+      {esAdmin && <div className="actions">
+        <button className="btn" onClick={() => { setT({ ...abierta }); setEditando(abierta.id); }}>Editar</button>
+        <button className="btn danger" onClick={() => { eliminar(abierta); setAbierta(null); }}>Eliminar</button>
+      </div>}
+    </main>;
+  }
+
+  // ---- Calendario ----
+  if (vista === "calendario") {
+    const primero = new Date(mes.a, mes.m, 1);
+    const dias = new Date(mes.a, mes.m + 1, 0).getDate();
+    const desfase = (primero.getDay() + 6) % 7;      // la semana empieza en lunes
+    const hoy = hoyISO();
+    const celdas = [];
+    for (let i = 0; i < desfase; i++) celdas.push(null);
+    for (let d = 1; d <= dias; d++) {
+      const iso = mes.a + "-" + String(mes.m + 1).padStart(2, "0") + "-" + String(d).padStart(2, "0");
+      celdas.push({ d, iso, tareas: tareas.filter(x => x.inicio === iso || x.fin === iso) });
+    }
+    const delDia = dia ? tareas.filter(x => x.inicio === dia || x.fin === dia) : [];
+
+    return <main>
+      <h2>Tablero</h2>
+      <div className="vistas">
+        <button aria-pressed={false} onClick={() => setVista("tablero")}>Tablero</button>
+        <button aria-pressed={true}>Calendario</button>
+      </div>
+      <div className="mescab">
+        <button className="btn ghost" style={{ padding: "8px 12px" }}
+          onClick={() => setMes(m => m.m === 0 ? { a: m.a - 1, m: 11 } : { a: m.a, m: m.m - 1 })}>‹</button>
+        <b>{MESES_N[mes.m]} {mes.a}</b>
+        <button className="btn ghost" style={{ padding: "8px 12px" }}
+          onClick={() => setMes(m => m.m === 11 ? { a: m.a + 1, m: 0 } : { a: m.a, m: m.m + 1 })}>›</button>
+      </div>
+      <div className="cal">
+        {["L", "M", "M", "J", "V", "S", "D"].map((d, i) => <div className="dn" key={i}>{d}</div>)}
+        {celdas.map((c, i) => c
+          ? <div key={i} className={"dia" + (c.iso === hoy ? " hoy" : "")} onClick={() => setDia(c.iso === dia ? "" : c.iso)}>
+              <span className="n">{c.d}</span>
+              {c.tareas.slice(0, 3).map(x => <span key={x.id} className={"p " + x.prioridad} />)}
+            </div>
+          : <div key={i} className="dia vacio" />)}
+      </div>
+
+      {dia && <>
+        <h2 style={{ marginTop: 18 }}>{dia}</h2>
+        {!delDia.length && <div className="empty">Sin tareas ese día.</div>}
+        {delDia.map(x => <div className={"tarea " + x.prioridad} key={x.id} onClick={() => setAbierta(x)}>
+          <div className="t">{x.titulo}</div>
+          <div className="d">{x.ubicacion || "—"}{x.asignado ? " · " + x.asignado.split(" ")[0] : ""}</div>
+        </div>)}
+      </>}
+    </main>;
+  }
+
+  // ---- Tablero ----
+  return <main>
+    <h2>Tablero</h2>
+    <p className="lead">{esAdmin ? "Todas las actividades del equipo." : "Actividades asignadas a usted."}</p>
+    <div className="vistas">
+      <button aria-pressed={true}>Tablero</button>
+      <button aria-pressed={false} onClick={() => setVista("calendario")}>Calendario</button>
+    </div>
+
+    {esAdmin && <button className="btn primary block" style={{ marginBottom: 10 }}
+      onClick={() => { setT({ ...vacia }); setEditando("nuevo"); }}>Nueva tarea</button>}
+    <button className="btn ghost block" style={{ marginBottom: 14 }} onClick={cargar} disabled={cargando}>
+      {cargando ? <><span className="spin" /> Consultando…</> : "Actualizar"}</button>
+
+    {error && <div className="note bad">{error}</div>}
+    {!cargando && !tareas.length && !error && <div className="empty">No hay actividades en el tablero.</div>}
+
+    <div className="kanban">
+      {COLUMNAS.map(c => {
+        const dela = tareas.filter(x => x.estado === c.k);
+        return <div className="kcol" key={c.k}>
+          <h3>{c.n}<b>{dela.length}</b></h3>
+          {!dela.length && <div style={{ fontSize: 12, color: "var(--muted)", padding: "6px 2px" }}>Vacía</div>}
+          {dela.map(x => <div className={"tarea " + x.prioridad} key={x.id} onClick={() => setAbierta(x)}>
+            <div className="t">{x.titulo}</div>
+            <div className="d">
+              {x.inicio || "sin fecha"}{x.fin && x.fin !== x.inicio ? " → " + x.fin : ""}<br />
+              {x.ubicacion || "sin ubicación"}
+              {esAdmin && x.asignado ? <><br />{x.asignado}</> : null}
+            </div>
+          </div>)}
+        </div>;
+      })}
+    </div>
   </main>;
 }
 
@@ -1299,7 +1503,7 @@ function Ajustes({ ingeniero, salir, esquema, faltantes, mapa, recargar, estadoP
 function App() {
   const [listo, setListo] = useState(false);
   const [ingeniero, setIngeniero] = useState("");
-  const [tab, setTab] = useState("borradores");
+  const [tab, setTab] = useState("tablero");
   const [editando, setEditando] = useState(null);
   const [borradores, setBorradores] = useState([]);
   const [cola, setCola] = useState([]);
@@ -1322,6 +1526,9 @@ function App() {
   const [usuariosAdmin, setUsuariosAdmin] = useState([]);
   const [cargandoUsuarios, setCargandoUsuarios] = useState(false);
   const [errUsuarios, setErrUsuarios] = useState("");
+  const [tareas, setTareas] = useState([]);
+  const [cargandoTareas, setCargandoTareas] = useState(false);
+  const [errTareas, setErrTareas] = useState("");
   const [hilos, setHilos] = useState([]);
   const [hiloAbierto, setHiloAbierto] = useState(null);
   const [mensajes, setMensajes] = useState([]);
@@ -1418,6 +1625,46 @@ function App() {
       return "";
     } catch (e) { return e.message; }
   };
+
+  const cargarTareas = useCallback(async () => {
+    setCargandoTareas(true); setErrTareas("");
+    try {
+      const d = await Api.get({ action: "tareas", sesion });
+      setTareas(d.tareas || []);
+      await Store.put("meta", { id: "tareas:" + ingeniero, items: d.tareas, ts: Date.now() });
+    } catch (e) {
+      const c = await Store.one("meta", "tareas:" + ingeniero);
+      if (c) { setTareas(c.items || []); setErrTareas("Sin conexión. Se muestra el último tablero guardado."); }
+      else setErrTareas("No se pudo consultar el tablero: " + e.message);
+    }
+    setCargandoTareas(false);
+  }, [sesion, ingeniero]);
+
+  const guardarTarea = useCallback(async t => {
+    try {
+      await Api.post({ action: "tareaGuardar", ...t, sesion });
+      await cargarTareas();
+      avisar("Tarea guardada");
+      return true;
+    } catch (e) { avisar("No se pudo guardar: " + e.message, true); return false; }
+  }, [sesion, cargarTareas]);
+
+  const moverTarea = useCallback(async (t, estado) => {
+    // Se refleja de inmediato y se confirma con el servidor: en campo la red tarda
+    setTareas(prev => prev.map(x => x.id === t.id ? { ...x, estado } : x));
+    try {
+      await Api.post({ action: "tareaEstado", id: t.id, estado, sesion });
+      cargarTareas();
+    } catch (e) { avisar("No se pudo mover: " + e.message, true); cargarTareas(); }
+  }, [sesion, cargarTareas]);
+
+  const eliminarTarea = useCallback(async t => {
+    try {
+      await Api.post({ action: "tareaEliminar", id: t.id, sesion });
+      await cargarTareas();
+      avisar("Tarea eliminada");
+    } catch (e) { avisar("No se pudo eliminar: " + e.message, true); }
+  }, [sesion, cargarTareas]);
 
   const cargarUsuariosAdmin = useCallback(async () => {
     setCargandoUsuarios(true); setErrUsuarios("");
@@ -1718,11 +1965,15 @@ function App() {
     {editando
       ? <Formulario borrador={editando} mapa={mapa} faltantes={faltantes}
           guardar={guardarBorrador} enviar={encolar} cancelar={() => { setEditando(null); refrescar(); }} />
+      : tab === "tablero" ? <Tablero tareas={tareas} cargar={cargarTareas} cargando={cargandoTareas}
+          error={errTareas} esAdmin={esCoordinador} yo={ingeniero} guardar={guardarTarea}
+          mover={moverTarea} eliminar={eliminarTarea}
+          ingenieros={(mapa.ingeniero && mapa.ingeniero.opciones) || INGENIEROS} />
       : tab === "borradores" ? <ListaBorradores borradores={misBorradores} mapa={mapa} enviar={encolar}
+          cola={cola} enviando={enviando} reintentar={() => procesarCola(true)}
+          devolver={async id => { const o = await Store.one("outbox", id); await Store.del("outbox", id); if (o) await Store.put("drafts", { ...o, actualizada: Date.now() }); await refrescar(); avisar("Regresó a borradores"); }}
           abrir={b => setEditando(b)} nuevo={() => setEditando(nuevaOrden(ingeniero))}
           borrar={async id => { await Store.del("drafts", id); await refrescar(); avisar("Borrador eliminado"); }} />
-      : tab === "cola" ? <ColaEnvio cola={cola} enviando={enviando} reintentar={() => procesarCola(true)}
-          borrar={async id => { const o = await Store.one("outbox", id); await Store.del("outbox", id); if (o) await Store.put("drafts", { ...o, actualizada: Date.now() }); await refrescar(); avisar("Regresó a borradores"); }} />
       : tab === "envios" ? <MisEnvios ingeniero={ingeniero} enviados={enviados} cargar={cargarEnvios} cargando={cargandoEnvios} error={errEnvios} />
       : tab === "avisos" ? <Avisos ingeniero={ingeniero} avisos={avisos} cargar={cargarAvisos}
           cargando={cargandoAvisos} error={errAvisos} esCoordinador={esCoordinador}
@@ -1751,12 +2002,12 @@ function App() {
     {toast && <div className={"toast" + (toast.malo ? " bad" : "")}>{toast.msg}</div>}
 
     {!editando && <nav className="tabs">
-      {[["borradores", "▤", "Borradores"], ["cola", "⇧", "Por enviar"], ["envios", "✓", "Mis envíos"],
+      {[["tablero", "▦", "Tablero"], ["borradores", "▤", "Borradores"], ["envios", "✓", "Mis envíos"],
         ["avisos", "⚑", "Avisos"], ["chat", "✉", "Chat"]].map(([k, ic, et]) =>
         <button key={k} aria-current={tab === k ? "page" : undefined}
           onClick={() => k === "avisos" ? verAvisos() : setTab(k)}>
           <span className="ic">{ic}</span>{et}
-          {k === "cola" && cola.length > 0 && <span className="badge">{cola.length}</span>}
+          {k === "borradores" && cola.length > 0 && <span className="badge">{cola.length}</span>}
           {k === "avisos" && avisosNuevos > 0 && <span className="badge">{avisosNuevos}</span>}
           {k === "chat" && (hilosNuevos + colaChat.length) > 0 && <span className="badge">{hilosNuevos + colaChat.length}</span>}
         </button>)}
