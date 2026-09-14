@@ -139,20 +139,26 @@ nav.tabs .badge{position:absolute;top:5px;right:calc(50% - 20px);background:var(
 .tarea{background:var(--panel-2);border:1px solid var(--line);border-left:3px solid var(--mint);border-radius:8px;padding:10px 11px;margin-bottom:8px;cursor:pointer}
 .tarea.alta{border-left-color:var(--alert)}
 .tarea.media{border-left-color:#FF9F43}
-.tarea.estandar{border-left-color:var(--mint)}
+.tarea.baja{border-left-color:var(--mint)}
+.tarea.con_observacion{border-left-color:var(--amber)}
 .tarea .t{font-size:14px;font-weight:600;line-height:1.3;margin-bottom:4px}
 .tarea .d{font-size:11.5px;color:var(--muted);font-family:var(--mono);line-height:1.5}
 .vistas{display:flex;gap:6px;margin-bottom:14px}
 .vistas button{flex:1;background:var(--panel-2);border:1px solid var(--line);border-radius:8px;padding:9px;font-size:13px;font-weight:600;cursor:pointer;color:var(--muted)}
 .vistas button[aria-pressed=true]{background:var(--amber);border-color:var(--amber);color:#06182A}
 /* Calendario */
-.cal{display:grid;grid-template-columns:repeat(7,1fr);gap:3px}
+.cal{display:grid;grid-template-columns:repeat(7,1fr);gap:3px;overflow:hidden}
 .cal .dn{font-size:9.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);text-align:center;padding:4px 0;font-weight:700}
 .cal .dia{aspect-ratio:1;background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:3px;font-size:11px;display:flex;flex-direction:column;gap:2px;cursor:pointer}
 .cal .dia.vacio{background:none;border-color:transparent;cursor:default}
 .cal .dia.hoy{border-color:var(--amber)}
 .cal .dia .n{font-family:var(--mono);color:var(--muted);font-size:10px}
-.cal .dia .p{height:4px;border-radius:2px;background:var(--mint)}
+/* La barra se extiende hasta cruzar la separación entre celdas: así una tarea de
+   varios días se lee como una línea continua y se ve la carga del ingeniero. */
+.cal .dia .p{height:4px;background:var(--mint);margin:0 -5px;border-radius:0}
+.cal .dia .p.ini{margin-left:0;border-top-left-radius:2px;border-bottom-left-radius:2px}
+.cal .dia .p.fin{margin-right:0;border-top-right-radius:2px;border-bottom-right-radius:2px}
+.cal .dia .mas{font-family:var(--mono);font-size:8.5px;color:var(--muted);line-height:1}
 .cal .dia .p.alta{background:var(--alert)} .cal .dia .p.media{background:#FF9F43}
 .mescab{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
 .mescab b{font-size:15px;text-transform:capitalize}
@@ -179,6 +185,9 @@ nav.tabs .badge{position:absolute;top:5px;right:calc(50% - 20px);background:var(
 .aviso .meta{margin-top:9px;font-family:var(--mono);font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
 .kv{font-family:var(--mono);font-size:12px;line-height:1.7;color:var(--muted);word-break:break-word}
 .kv b{color:var(--text);font-weight:600}
+/* El NIP: cuatro dígitos separados sin que el campo se desborde en pantallas chicas */
+input.nip{width:100%;text-align:center;font-family:var(--mono);font-size:20px;letter-spacing:.45em;
+  text-indent:.45em;padding:13px 12px}
 .spin{display:inline-block;width:14px;height:14px;border:2px solid rgba(255,255,255,.25);border-top-color:var(--amber);border-radius:50%;animation:sp .7s linear infinite}
 @keyframes sp{to{transform:rotate(360deg)}}
 .center{display:flex;align-items:center;justify-content:center;min-height:60vh;flex-direction:column;gap:14px;text-align:center;padding:20px}
@@ -224,7 +233,7 @@ window.CONFIG = {
   // Token compartido: debe ser idéntico al del Apps Script
   TOKEN: "aiiPlCWrNHmMcqLQRrj9RK2QVnqfxSMzPYISzJ88dXNjB8Ys",
   FORM_ID: "260445478825062",
-  BUILD: "Rev.26"
+  BUILD: "Rev.29"
 };
 </script>
 
@@ -699,10 +708,9 @@ function Identificacion({ onEntrar, usuarios, recargar, cargando }) {
           {usuarios.map(u => <option key={u.nombre} value={u.nombre}>{u.nombre}</option>)}
         </select>
 
-        <input type="password" inputMode="numeric" maxLength={4} value={nip}
+        <input type="password" inputMode="numeric" maxLength={4} value={nip} className="nip"
           onChange={e => setNip(e.target.value.replace(/\D/g, ""))}
-          placeholder="NIP"
-          style={{ marginTop: 12, textAlign: "center", letterSpacing: ".5em", fontSize: 22 }} />
+          placeholder="• • • •" style={{ marginTop: 12 }} />
 
         {err && <div className="note bad" style={{ marginTop: 10 }}>{err}</div>}
 
@@ -1026,15 +1034,15 @@ function Avisos({ ingeniero, avisos, cargar, cargando, error, esCoordinador, ing
 }
 
 const COLUMNAS = [
-  { k: "por_asignar", n: "Por asignar" },
   { k: "asignada", n: "Asignada" },
   { k: "en_proceso", n: "En proceso" },
-  { k: "terminada", n: "Terminada" }
+  { k: "terminada", n: "Terminada" },
+  { k: "con_observacion", n: "Con observación" }
 ];
 const PRIORIDADES = [
-  { k: "alta", n: "Prioritaria" },
+  { k: "alta", n: "Alta" },
   { k: "media", n: "Media" },
-  { k: "estandar", n: "Estándar" }
+  { k: "baja", n: "Baja" }
 ];
 const MESES_N = ["enero", "febrero", "marzo", "abril", "mayo", "junio",
   "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"];
@@ -1044,13 +1052,15 @@ function Tablero({ tareas, cargar, cargando, error, esAdmin, yo, ingenieros, gua
   const [abierta, setAbierta] = useState(null);
   const [editando, setEditando] = useState(null);
   const [guardando, setGuardando] = useState(false);
+  const [observando, setObservando] = useState(false);
+  const [comentario, setComentario] = useState("");
   const [mes, setMes] = useState(() => { const d = new Date(); return { a: d.getFullYear(), m: d.getMonth() }; });
   const [dia, setDia] = useState("");
   const [t, setT] = useState({});
   useEffect(() => { cargar(); }, []);
 
   const vacia = { titulo: "", inicio: hoyISO(), fin: hoyISO(), ubicacion: "",
-    observaciones: "", prioridad: "estandar", asignado: "", estado: "por_asignar" };
+    observaciones: "", prioridad: "baja", asignado: "", estado: "asignada" };
 
   const aplicar = async () => {
     setGuardando(true);
@@ -1110,13 +1120,38 @@ function Tablero({ tareas, cargar, cargando, error, esAdmin, yo, ingenieros, gua
         {abierta.observaciones && <div style={{ marginTop: 8 }}><b>Observaciones:</b><br />{abierta.observaciones}</div>}
       </div></div>
 
+      {abierta.bitacora && <>
+        <h2 style={{ marginTop: 18 }}>Bitácora</h2>
+        <div className="card"><div className="kv" style={{ whiteSpace: "pre-wrap" }}>{abierta.bitacora}</div></div>
+      </>}
+
       {puedeMover && <>
         <h2 style={{ marginTop: 18 }}>Mover a</h2>
         <div className="chips" style={{ marginBottom: 14 }}>
-          {COLUMNAS.map(c => <button key={c.k} type="button" className="chip"
+          {COLUMNAS.map(c => <button key={c.k} type="button"
+            className={"chip" + (c.k === "con_observacion" ? " neg" : "")}
             aria-pressed={abierta.estado === c.k}
-            onClick={() => { mover(abierta, c.k); setAbierta({ ...abierta, estado: c.k }); }}>{c.n}</button>)}
+            onClick={() => {
+              // Con observación exige explicar por qué la tarea no se completó
+              if (c.k === "con_observacion") { setComentario(""); setObservando(true); return; }
+              mover(abierta, c.k); setAbierta({ ...abierta, estado: c.k });
+            }}>{c.n}</button>)}
         </div>
+
+        {observando && <div className="card">
+          <label className="f"><span className="lb">Observación <em>*</em></span>
+            <textarea value={comentario} onChange={e => setComentario(e.target.value)} autoFocus
+              placeholder="Por qué no se pudo completar: falta de refacción, equipo en uso, acceso restringido…" /></label>
+          <div className="actions">
+            <button className="btn ghost" onClick={() => setObservando(false)}>Cancelar</button>
+            <button className="btn primary" disabled={!comentario.trim()}
+              onClick={() => {
+                mover(abierta, "con_observacion", comentario.trim());
+                setAbierta({ ...abierta, estado: "con_observacion" });
+                setObservando(false); setComentario("");
+              }}>Guardar observación</button>
+          </div>
+        </div>}
       </>}
       {!puedeMover && <div className="note">Esta tarea no está asignada a usted.</div>}
 
@@ -1127,6 +1162,13 @@ function Tablero({ tareas, cargar, cargando, error, esAdmin, yo, ingenieros, gua
     </main>;
   }
 
+  // Una tarea ocupa todos los días entre su inicio y su fin, no solo los extremos
+  const enRango = (x, iso) => {
+    const ini = x.inicio || x.fin, fin = x.fin || x.inicio;
+    if (!ini) return false;
+    return iso >= ini && iso <= fin;
+  };
+
   // ---- Calendario ----
   if (vista === "calendario") {
     const primero = new Date(mes.a, mes.m, 1);
@@ -1135,11 +1177,14 @@ function Tablero({ tareas, cargar, cargando, error, esAdmin, yo, ingenieros, gua
     const hoy = hoyISO();
     const celdas = [];
     for (let i = 0; i < desfase; i++) celdas.push(null);
+    // Se ordenan igual en todos los días para que cada tarea conserve su renglón
+    const ordenadas = [...tareas].sort((a, b) =>
+      (a.inicio || "").localeCompare(b.inicio || "") || String(a.id).localeCompare(String(b.id)));
     for (let d = 1; d <= dias; d++) {
       const iso = mes.a + "-" + String(mes.m + 1).padStart(2, "0") + "-" + String(d).padStart(2, "0");
-      celdas.push({ d, iso, tareas: tareas.filter(x => x.inicio === iso || x.fin === iso) });
+      celdas.push({ d, iso, tareas: ordenadas.filter(x => enRango(x, iso)) });
     }
-    const delDia = dia ? tareas.filter(x => x.inicio === dia || x.fin === dia) : [];
+    const delDia = dia ? ordenadas.filter(x => enRango(x, dia)) : [];
 
     return <main>
       <h2>Tablero</h2>
@@ -1159,7 +1204,12 @@ function Tablero({ tareas, cargar, cargando, error, esAdmin, yo, ingenieros, gua
         {celdas.map((c, i) => c
           ? <div key={i} className={"dia" + (c.iso === hoy ? " hoy" : "")} onClick={() => setDia(c.iso === dia ? "" : c.iso)}>
               <span className="n">{c.d}</span>
-              {c.tareas.slice(0, 3).map(x => <span key={x.id} className={"p " + x.prioridad} />)}
+              {c.tareas.slice(0, 3).map(x => {
+                const ini = x.inicio || x.fin, fin = x.fin || x.inicio;
+                return <span key={x.id} className={"p " + x.prioridad +
+                  (c.iso === ini ? " ini" : "") + (c.iso === fin ? " fin" : "")} />;
+              })}
+              {c.tareas.length > 3 && <span className="mas">+{c.tareas.length - 3}</span>}
             </div>
           : <div key={i} className="dia vacio" />)}
       </div>
@@ -1169,7 +1219,12 @@ function Tablero({ tareas, cargar, cargando, error, esAdmin, yo, ingenieros, gua
         {!delDia.length && <div className="empty">Sin tareas ese día.</div>}
         {delDia.map(x => <div className={"tarea " + x.prioridad} key={x.id} onClick={() => setAbierta(x)}>
           <div className="t">{x.titulo}</div>
-          <div className="d">{x.ubicacion || "—"}{x.asignado ? " · " + x.asignado.split(" ")[0] : ""}</div>
+          <div className="d">
+            {x.ubicacion || "—"}{x.asignado ? " · " + x.asignado.split(" ")[0] : ""}<br />
+            {x.inicio || "?"}{x.fin && x.fin !== x.inicio ? " → " + x.fin : ""}
+            {(COLUMNAS.find(c => c.k === x.estado) || {}).n
+              ? " · " + (COLUMNAS.find(c => c.k === x.estado) || {}).n : ""}
+          </div>
         </div>)}
       </>}
     </main>;
@@ -1422,8 +1477,18 @@ function Chat({ ingeniero, sesion, esCoordinador, hilos, cargarHilos, cargando, 
   </main>;
 }
 
-function Ajustes({ ingeniero, salir, esquema, faltantes, mapa, recargar, estadoProxy, ultimaRevision, rol, verUsuarios }) {
+function Ajustes({ ingeniero, salir, esquema, faltantes, mapa, recargar, estadoProxy, ultimaRevision,
+  rol, verUsuarios, cambiarNip }) {
   const [prueba, setPrueba] = useState(null);
+  const [nips, setNips] = useState(null);
+  const [cambiando, setCambiando] = useState(false);
+
+  const aplicarNip = async () => {
+    setCambiando(true);
+    const err = await cambiarNip(nips.actual, nips.nuevo);
+    setCambiando(false);
+    if (!err) setNips(null); else setNips({ ...nips, err });
+  };
   const probar = async () => {
     setPrueba({ ok: null, texto: "Probando…" });
     const url = CONFIG.PROXY_URL + "?action=ping&token=" + encodeURIComponent(CONFIG.TOKEN);
@@ -1471,6 +1536,30 @@ function Ajustes({ ingeniero, salir, esquema, faltantes, mapa, recargar, estadoP
       </div>
       {rol === "administrador" && <button className="btn primary block" style={{ marginTop: 10 }}
         onClick={verUsuarios}>Gestionar usuarios</button>}
+
+      {nips
+        ? <div style={{ marginTop: 14, borderTop: "1px solid var(--line)", paddingTop: 14 }}>
+            <label className="f"><span className="lb">NIP actual</span>
+              <input type="password" inputMode="numeric" maxLength={4} className="nip" value={nips.actual}
+                onChange={e => setNips({ ...nips, actual: e.target.value.replace(/\D/g, ""), err: "" })} /></label>
+            <label className="f"><span className="lb">NIP nuevo</span>
+              <input type="password" inputMode="numeric" maxLength={4} className="nip" value={nips.nuevo}
+                onChange={e => setNips({ ...nips, nuevo: e.target.value.replace(/\D/g, ""), err: "" })} /></label>
+            <label className="f"><span className="lb">Repita el NIP nuevo</span>
+              <input type="password" inputMode="numeric" maxLength={4} className="nip" value={nips.repetir}
+                onChange={e => setNips({ ...nips, repetir: e.target.value.replace(/\D/g, ""), err: "" })} /></label>
+            {nips.err && <div className="note bad">{nips.err}</div>}
+            {nips.nuevo && nips.repetir && nips.nuevo !== nips.repetir &&
+              <div className="note bad">Los dos NIP nuevos no coinciden.</div>}
+            <div className="actions">
+              <button className="btn ghost" onClick={() => setNips(null)}>Cancelar</button>
+              <button className="btn primary" disabled={cambiando ||
+                nips.actual.length !== 4 || nips.nuevo.length !== 4 || nips.nuevo !== nips.repetir}
+                onClick={aplicarNip}>{cambiando ? <span className="spin" /> : "Cambiar NIP"}</button>
+            </div>
+          </div>
+        : <button className="btn ghost block" style={{ marginTop: 10 }}
+            onClick={() => setNips({ actual: "", nuevo: "", repetir: "", err: "" })}>Cambiar mi NIP</button>}
       <button className="btn ghost block" style={{ marginTop: 10 }} onClick={probar}>Probar conexión</button>
       {prueba && prueba.ok !== null && <div className={"note" + (prueba.ok ? "" : " bad")} style={{ marginTop: 10 }}>
         {prueba.ok
@@ -1649,11 +1738,11 @@ function App() {
     } catch (e) { avisar("No se pudo guardar: " + e.message, true); return false; }
   }, [sesion, cargarTareas]);
 
-  const moverTarea = useCallback(async (t, estado) => {
+  const moverTarea = useCallback(async (t, estado, comentario) => {
     // Se refleja de inmediato y se confirma con el servidor: en campo la red tarda
     setTareas(prev => prev.map(x => x.id === t.id ? { ...x, estado } : x));
     try {
-      await Api.post({ action: "tareaEstado", id: t.id, estado, sesion });
+      await Api.post({ action: "tareaEstado", id: t.id, estado, comentario, sesion });
       cargarTareas();
     } catch (e) { avisar("No se pudo mover: " + e.message, true); cargarTareas(); }
   }, [sesion, cargarTareas]);
@@ -1665,6 +1754,14 @@ function App() {
       avisar("Tarea eliminada");
     } catch (e) { avisar("No se pudo eliminar: " + e.message, true); }
   }, [sesion, cargarTareas]);
+
+  const cambiarMiNip = useCallback(async (nipActual, nipNuevo) => {
+    try {
+      await Api.post({ action: "cambiarNip", nipActual, nipNuevo, sesion });
+      avisar("NIP actualizado. Úselo la próxima vez que entre.");
+      return "";
+    } catch (e) { return e.message; }
+  }, [sesion]);
 
   const cargarUsuariosAdmin = useCallback(async () => {
     setCargandoUsuarios(true); setErrUsuarios("");
@@ -1989,7 +2086,7 @@ function App() {
           ingenieros={(mapa.ingeniero && mapa.ingeniero.opciones) || INGENIEROS} reasignar={reasignarHilo} />
       : <Ajustes ingeniero={ingeniero} esquema={esquema} mapa={mapa} faltantes={faltantes}
           estadoProxy={estadoProxy} ultimaRevision={ultimaRevision} recargar={() => leerEsquema(false)}
-          rol={rol} verUsuarios={() => setTab("usuarios")}
+          rol={rol} verUsuarios={() => setTab("usuarios")} cambiarNip={cambiarMiNip}
           salir={async () => {
             // Cerrar identidad debe cerrar también la sesión: si no, quien vuelva
             // a entrar dentro de las 12 horas queda como coordinación sin PIN.
