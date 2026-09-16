@@ -233,7 +233,7 @@ window.CONFIG = {
   // Token compartido: debe ser idéntico al del Apps Script
   TOKEN: "aiiPlCWrNHmMcqLQRrj9RK2QVnqfxSMzPYISzJ88dXNjB8Ys",
   FORM_ID: "260445478825062",
-  BUILD: "Rev.30"
+  BUILD: "Rev.31"
 };
 </script>
 
@@ -1048,8 +1048,10 @@ const MESES_N = ["enero", "febrero", "marzo", "abril", "mayo", "junio",
   "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"];
 
 function Tablero({ tareas, cargar, cargando, error, esAdmin, yo, ingenieros, guardar, mover, eliminar,
-  enviarReporte, enviandoRep }) {
+  enviarReporte, enviandoRep, enviarUbicaciones, enviandoUbic }) {
   const [filtros, setFiltros] = useState({ desde: "", hasta: "", ingeniero: "", estado: "", prioridad: "" });
+  const [correoDestino, setCorreoDestino] = useState("");
+  const [correoUbic, setCorreoUbic] = useState("");
   const [vista, setVista] = useState("tablero");
   const [abierta, setAbierta] = useState(null);
   const [editando, setEditando] = useState(null);
@@ -1294,10 +1296,28 @@ function Tablero({ tareas, cargar, cargando, error, esAdmin, yo, ingenieros, gua
         <div className="kv">{contar("asignado").map(([k, n]) => <div key={k}><b>{k}:</b> {n}</div>)}</div>
       </div>
 
+      <label className="f"><span className="lb">Enviar a (opcional)</span>
+        <input type="email" value={correoDestino} onChange={e => setCorreoDestino(e.target.value)}
+          placeholder="Deje vacío para usar el correo de su usuario" /></label>
+
       <button className="btn primary block" disabled={!lista.length || enviandoRep}
-        onClick={() => enviarReporte(f)}>
-        {enviandoRep ? <><span className="spin" /> Generando…</> : "Enviar reporte en PDF por correo"}</button>
-      <p className="lead" style={{ marginTop: 8 }}>Llega al correo registrado en su usuario, con el detalle completo y la bitácora de cada actividad.</p>
+        onClick={() => enviarReporte({ ...f, correo: correoDestino.trim() })}>
+        {enviandoRep ? <><span className="spin" /> Generando…</> : "Enviar reporte completo en PDF"}</button>
+      <p className="lead" style={{ marginTop: 8 }}>Incluye totales, el detalle de cada actividad y su bitácora de observaciones.</p>
+
+      {/* Reporte de ubicaciones: solo quién, dónde y por cuánto tiempo */}
+      <div className="card" style={{ marginTop: 6 }}>
+        <h3 style={{ fontSize: 11, letterSpacing: ".12em", textTransform: "uppercase", color: "var(--amber)", margin: "0 0 8px" }}>
+          Reporte de ubicaciones</h3>
+        <p className="lead" style={{ marginBottom: 12 }}>
+          Dónde está asignado cada ingeniero y por cuántos días, en el periodo de arriba. Sin prioridades ni estados.</p>
+        <label className="f"><span className="lb">Enviar a <em>*</em></span>
+          <input type="email" value={correoUbic} onChange={e => setCorreoUbic(e.target.value)}
+            placeholder="correo@ejemplo.com" /></label>
+        <button className="btn block" disabled={!correoUbic.trim() || enviandoUbic}
+          onClick={() => enviarUbicaciones({ desde: f.desde, hasta: f.hasta, correo: correoUbic.trim() })}>
+          {enviandoUbic ? <><span className="spin" /> Generando…</> : "Enviar reporte de ubicaciones"}</button>
+      </div>
 
       {lista.map(x => <div className={"tarea " + x.prioridad} key={x.id} onClick={() => setAbierta(x)} style={{ marginTop: 8 }}>
         <div className="t">{x.titulo}</div>
@@ -1697,6 +1717,7 @@ function App() {
   const [cargandoTareas, setCargandoTareas] = useState(false);
   const [errTareas, setErrTareas] = useState("");
   const [enviandoRep, setEnviandoRep] = useState(false);
+  const [enviandoUbic, setEnviandoUbic] = useState(false);
   const [hilos, setHilos] = useState([]);
   const [hiloAbierto, setHiloAbierto] = useState(null);
   const [mensajes, setMensajes] = useState([]);
@@ -1825,6 +1846,15 @@ function App() {
       cargarTareas();
     } catch (e) { avisar("No se pudo mover: " + e.message, true); cargarTareas(); }
   }, [sesion, cargarTareas]);
+
+  const enviarUbicaciones = useCallback(async f => {
+    setEnviandoUbic(true);
+    try {
+      const d = await Api.post({ action: "reporteUbicaciones", ...f, sesion });
+      avisar(d.filas + " asignación(es) enviadas a " + d.correo);
+    } catch (e) { avisar("No se pudo enviar: " + e.message, true); }
+    setEnviandoUbic(false);
+  }, [sesion]);
 
   const enviarReporte = useCallback(async f => {
     setEnviandoRep(true);
@@ -2154,6 +2184,7 @@ function App() {
           error={errTareas} esAdmin={esCoordinador} yo={ingeniero} guardar={guardarTarea}
           mover={moverTarea} eliminar={eliminarTarea}
           enviarReporte={enviarReporte} enviandoRep={enviandoRep}
+          enviarUbicaciones={enviarUbicaciones} enviandoUbic={enviandoUbic}
           ingenieros={(mapa.ingeniero && mapa.ingeniero.opciones) || INGENIEROS} />
       : tab === "borradores" ? <ListaBorradores borradores={misBorradores} mapa={mapa} enviar={encolar}
           cola={cola} enviando={enviando} reintentar={() => procesarCola(true)}
