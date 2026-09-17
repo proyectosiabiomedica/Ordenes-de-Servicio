@@ -233,7 +233,7 @@ window.CONFIG = {
   // Token compartido: debe ser idéntico al del Apps Script
   TOKEN: "aiiPlCWrNHmMcqLQRrj9RK2QVnqfxSMzPYISzJ88dXNjB8Ys",
   FORM_ID: "260445478825062",
-  BUILD: "Rev.32"
+  BUILD: "Rev.33"
 };
 </script>
 
@@ -1053,6 +1053,8 @@ function Tablero({ tareas, cargar, cargando, error, esAdmin, esVisualizador, yo,
   const [correoDestino, setCorreoDestino] = useState("");
   const [correoUbic, setCorreoUbic] = useState("");
   const [vista, setVista] = useState(esVisualizador ? "ingeniero" : "tablero");
+  // En el perfil de consulta la tarjeta se identifica por dónde está el trabajo
+  const rotulo = x => esVisualizador ? (x.ubicacion || "Sin ubicación") : x.titulo;
   const [abierta, setAbierta] = useState(null);
   const [editando, setEditando] = useState(null);
   const [guardando, setGuardando] = useState(false);
@@ -1113,7 +1115,7 @@ function Tablero({ tareas, cargar, cargando, error, esAdmin, esVisualizador, yo,
     const puedeMover = !esVisualizador && (esAdmin || norm(abierta.asignado) === norm(yo));
     return <main>
       <button className="btn ghost" onClick={() => setAbierta(null)} style={{ marginBottom: 12 }}>← Tablero</button>
-      <h2>{abierta.titulo}</h2>
+      <h2>{rotulo(abierta)}</h2>
       <p className="lead">{(PRIORIDADES.find(p => p.k === abierta.prioridad) || {}).n} · {col ? col.n : abierta.estado}</p>
       <div className="card"><div className="kv">
         <div><b>Inicio:</b> {abierta.inicio || "—"}</div>
@@ -1226,7 +1228,7 @@ function Tablero({ tareas, cargar, cargando, error, esAdmin, esVisualizador, yo,
         <h2 style={{ marginTop: 18 }}>{dia}</h2>
         {!delDia.length && <div className="empty">Sin tareas ese día.</div>}
         {delDia.map(x => <div className={"tarea " + x.prioridad} key={x.id} onClick={() => setAbierta(x)}>
-          <div className="t">{x.titulo}</div>
+          <div className="t">{rotulo(x)}</div>
           <div className="d">
             {x.ubicacion || "—"}{x.asignado ? " · " + x.asignado.split(" ")[0] : ""}<br />
             {x.inicio || "?"}{x.fin && x.fin !== x.inicio ? " → " + x.fin : ""}
@@ -1239,22 +1241,19 @@ function Tablero({ tareas, cargar, cargando, error, esAdmin, esVisualizador, yo,
   }
 
   // ---- Agrupado por ingeniero o por ubicación (perfil de consulta) ----
-  if (vista === "ingeniero" || vista === "ubicacion") {
-    const campo = vista === "ingeniero" ? "asignado" : "ubicacion";
-    const vacio = vista === "ingeniero" ? "Sin asignar" : "Sin ubicación";
+  if (vista === "ingeniero") {
     const grupos = {};
     tareas.forEach(x => {
-      const k = (x[campo] || "").trim() || vacio;
+      const k = (x.asignado || "").trim() || "Sin asignar";
       (grupos[k] = grupos[k] || []).push(x);
     });
     const nombres = Object.keys(grupos).sort((a, b) => a.localeCompare(b));
 
     return <main>
       <h2>Tablero</h2>
-      <p className="lead">Actividades agrupadas por {vista === "ingeniero" ? "ingeniero" : "ubicación"}.</p>
+      <p className="lead">Dónde está asignado cada ingeniero.</p>
       <div className="vistas">
-        <button aria-pressed={vista === "ingeniero"} onClick={() => setVista("ingeniero")}>Por ingeniero</button>
-        <button aria-pressed={vista === "ubicacion"} onClick={() => setVista("ubicacion")}>Por ubicación</button>
+        <button aria-pressed={true}>Por ingeniero</button>
         <button aria-pressed={false} onClick={() => setVista("calendario")}>Calendario</button>
       </div>
       <button className="btn ghost block" style={{ marginBottom: 14 }} onClick={cargar} disabled={cargando}>
@@ -1268,10 +1267,9 @@ function Tablero({ tareas, cargar, cargando, error, esAdmin, esVisualizador, yo,
           margin: "0 0 8px", display: "flex", justifyContent: "space-between" }}>
           <span>{n}</span><span style={{ color: "var(--muted)" }}>{grupos[n].length}</span></h3>
         {grupos[n].map(x => <div className={"tarea " + x.prioridad} key={x.id} onClick={() => setAbierta(x)}>
-          <div className="t">{x.titulo}</div>
+          <div className="t">{rotulo(x)}</div>
           <div className="d">
-            {x.inicio || "sin fecha"}{x.fin && x.fin !== x.inicio ? " → " + x.fin : ""}<br />
-            {vista === "ingeniero" ? (x.ubicacion || "sin ubicación") : (x.asignado || "sin asignar")}
+            {x.inicio || "sin fecha"}{x.fin && x.fin !== x.inicio ? " → " + x.fin : ""}
             {" · " + ((COLUMNAS.find(c => c.k === x.estado) || {}).n || x.estado)}
           </div>
         </div>)}
