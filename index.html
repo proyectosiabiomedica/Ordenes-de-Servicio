@@ -233,7 +233,7 @@ window.CONFIG = {
   // Token compartido: debe ser idéntico al del Apps Script
   TOKEN: "aiiPlCWrNHmMcqLQRrj9RK2QVnqfxSMzPYISzJ88dXNjB8Ys",
   FORM_ID: "260445478825062",
-  BUILD: "Rev.31"
+  BUILD: "Rev.32"
 };
 </script>
 
@@ -1047,12 +1047,12 @@ const PRIORIDADES = [
 const MESES_N = ["enero", "febrero", "marzo", "abril", "mayo", "junio",
   "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"];
 
-function Tablero({ tareas, cargar, cargando, error, esAdmin, yo, ingenieros, guardar, mover, eliminar,
+function Tablero({ tareas, cargar, cargando, error, esAdmin, esVisualizador, yo, ingenieros, guardar, mover, eliminar,
   enviarReporte, enviandoRep, enviarUbicaciones, enviandoUbic }) {
   const [filtros, setFiltros] = useState({ desde: "", hasta: "", ingeniero: "", estado: "", prioridad: "" });
   const [correoDestino, setCorreoDestino] = useState("");
   const [correoUbic, setCorreoUbic] = useState("");
-  const [vista, setVista] = useState("tablero");
+  const [vista, setVista] = useState(esVisualizador ? "ingeniero" : "tablero");
   const [abierta, setAbierta] = useState(null);
   const [editando, setEditando] = useState(null);
   const [guardando, setGuardando] = useState(false);
@@ -1110,7 +1110,7 @@ function Tablero({ tareas, cargar, cargando, error, esAdmin, yo, ingenieros, gua
   // ---- Ficha ----
   if (abierta) {
     const col = COLUMNAS.find(c => c.k === abierta.estado);
-    const puedeMover = esAdmin || norm(abierta.asignado) === norm(yo);
+    const puedeMover = !esVisualizador && (esAdmin || norm(abierta.asignado) === norm(yo));
     return <main>
       <button className="btn ghost" onClick={() => setAbierta(null)} style={{ marginBottom: 12 }}>← Tablero</button>
       <h2>{abierta.titulo}</h2>
@@ -1157,7 +1157,8 @@ function Tablero({ tareas, cargar, cargando, error, esAdmin, yo, ingenieros, gua
           </div>
         </div>}
       </>}
-      {!puedeMover && <div className="note">Esta tarea no está asignada a usted.</div>}
+      {!puedeMover && <div className="note">
+        {esVisualizador ? "Su perfil es de solo consulta." : "Esta tarea no está asignada a usted."}</div>}
 
       {esAdmin && <div className="actions">
         <button className="btn" onClick={() => { setT({ ...abierta, asignadoPrevio: abierta.asignado }); setEditando(abierta.id); }}>Editar</button>
@@ -1193,7 +1194,9 @@ function Tablero({ tareas, cargar, cargando, error, esAdmin, yo, ingenieros, gua
     return <main>
       <h2>Tablero</h2>
       <div className="vistas">
-        <button aria-pressed={false} onClick={() => setVista("tablero")}>Tablero</button>
+        <button aria-pressed={false}
+          onClick={() => setVista(esVisualizador ? "ingeniero" : "tablero")}>
+          {esVisualizador ? "Por ingeniero" : "Tablero"}</button>
         <button aria-pressed={true}>Calendario</button>
         {esAdmin && <button aria-pressed={false} onClick={() => setVista("reporte")}>Reporte</button>}
       </div>
@@ -1232,6 +1235,47 @@ function Tablero({ tareas, cargar, cargando, error, esAdmin, yo, ingenieros, gua
           </div>
         </div>)}
       </>}
+    </main>;
+  }
+
+  // ---- Agrupado por ingeniero o por ubicación (perfil de consulta) ----
+  if (vista === "ingeniero" || vista === "ubicacion") {
+    const campo = vista === "ingeniero" ? "asignado" : "ubicacion";
+    const vacio = vista === "ingeniero" ? "Sin asignar" : "Sin ubicación";
+    const grupos = {};
+    tareas.forEach(x => {
+      const k = (x[campo] || "").trim() || vacio;
+      (grupos[k] = grupos[k] || []).push(x);
+    });
+    const nombres = Object.keys(grupos).sort((a, b) => a.localeCompare(b));
+
+    return <main>
+      <h2>Tablero</h2>
+      <p className="lead">Actividades agrupadas por {vista === "ingeniero" ? "ingeniero" : "ubicación"}.</p>
+      <div className="vistas">
+        <button aria-pressed={vista === "ingeniero"} onClick={() => setVista("ingeniero")}>Por ingeniero</button>
+        <button aria-pressed={vista === "ubicacion"} onClick={() => setVista("ubicacion")}>Por ubicación</button>
+        <button aria-pressed={false} onClick={() => setVista("calendario")}>Calendario</button>
+      </div>
+      <button className="btn ghost block" style={{ marginBottom: 14 }} onClick={cargar} disabled={cargando}>
+        {cargando ? <><span className="spin" /> Consultando…</> : "Actualizar"}</button>
+
+      {error && <div className="note bad">{error}</div>}
+      {!cargando && !tareas.length && !error && <div className="empty">No hay actividades en el tablero.</div>}
+
+      {nombres.map(n => <div key={n} style={{ marginBottom: 18 }}>
+        <h3 style={{ fontSize: 12, letterSpacing: ".1em", textTransform: "uppercase", color: "var(--amber)",
+          margin: "0 0 8px", display: "flex", justifyContent: "space-between" }}>
+          <span>{n}</span><span style={{ color: "var(--muted)" }}>{grupos[n].length}</span></h3>
+        {grupos[n].map(x => <div className={"tarea " + x.prioridad} key={x.id} onClick={() => setAbierta(x)}>
+          <div className="t">{x.titulo}</div>
+          <div className="d">
+            {x.inicio || "sin fecha"}{x.fin && x.fin !== x.inicio ? " → " + x.fin : ""}<br />
+            {vista === "ingeniero" ? (x.ubicacion || "sin ubicación") : (x.asignado || "sin asignar")}
+            {" · " + ((COLUMNAS.find(c => c.k === x.estado) || {}).n || x.estado)}
+          </div>
+        </div>)}
+      </div>)}
     </main>;
   }
 
@@ -1409,6 +1453,7 @@ function Usuarios({ usuarios, cargar, cargando, error, guardar, ingenieros, yo }
       <label className="f"><span className="lb">Rol</span>
         <select value={u.rol} onChange={e => setU({ ...u, rol: e.target.value })}>
           <option value="operador">Operador · captura sus órdenes</option>
+          <option value="visualizador">Visualizador · solo consulta el tablero</option>
           <option value="administrador">Administrador · gestiona todo</option>
         </select></label>
 
@@ -1441,11 +1486,13 @@ function Usuarios({ usuarios, cargar, cargando, error, guardar, ingenieros, yo }
     {usuarios.map(x => <div className="item" key={x.fila} style={x.activo ? null : { opacity: .55 }}>
       <div className="body" onClick={() => editar(x)} style={{ cursor: "pointer" }}>
         <div className="t">{x.nombre}{norm(x.nombre) === norm(yo) ? " (usted)" : ""}</div>
-        <div className="s">{x.rol === "administrador" ? "Administrador" : "Operador"}
+        <div className="s">{x.rol === "administrador" ? "Administrador"
+          : x.rol === "visualizador" ? "Visualizador" : "Operador"}
           {x.correo ? " · " + x.correo : ""}<br />
           {x.activo ? "Activo" : "Dado de baja"}{x.tieneNip ? "" : " · sin NIP"}</div>
       </div>
-      <span className={"tag " + (x.rol === "administrador" ? "pend" : "")}>{x.rol === "administrador" ? "admin" : "operador"}</span>
+      <span className={"tag " + (x.rol === "administrador" ? "pend" : "")}>
+        {x.rol === "administrador" ? "admin" : x.rol === "visualizador" ? "consulta" : "operador"}</span>
     </div>)}
   </main>;
 }
@@ -1619,7 +1666,8 @@ function Ajustes({ ingeniero, salir, esquema, faltantes, mapa, recargar, estadoP
     <div className="card">
       <div className="kv">
         <div><b>Usuario:</b> {ingeniero}</div>
-        <div><b>Rol:</b> {rol === "administrador" ? "Administrador" : "Operador"}</div>
+        <div><b>Rol:</b> {rol === "administrador" ? "Administrador"
+          : rol === "visualizador" ? "Visualizador" : "Operador"}</div>
         <div><b>Formulario:</b> {CONFIG.FORM_ID}</div>
         <div><b>Versión de la app:</b> {CONFIG.BUILD || "Rev.01"}</div>
         <div><b>Proxy en uso:</b> …{String(CONFIG.PROXY_URL).slice(-18)}</div>
@@ -1975,6 +2023,8 @@ function App() {
   // El rol viene del servidor; la app solo lo refleja. Un administrador ve todo,
   // un operador solo sus órdenes y sus conversaciones.
   const esCoordinador = rol === "administrador";
+  // Perfil de solo consulta: ve el tablero y nada más
+  const esVisualizador = rol === "visualizador";
 
   const cargarHilos = useCallback(async () => {
     setCargandoChat(true); setErrChat("");
@@ -2152,6 +2202,10 @@ function App() {
     await Store.put("meta", { id: "avisosVistos", ts: ahora });
   };
 
+  // Una pestaña guardada de una sesión anterior no debe abrirle al visualizador
+  // una vista que su perfil no tiene.
+  const tabActual = (esVisualizador && tab !== "tablero" && tab !== "ajustes") ? "tablero" : tab;
+
   const misBorradores = borradores.filter(b => !b.valores.ingeniero || b.valores.ingeniero === ingeniero);
 
   return <>
@@ -2162,7 +2216,7 @@ function App() {
         <div className="brand">Orden de <span>Trabajo</span></div>
         <div className="who">{ingeniero.split(" ").slice(0, 2).join(" ")}<br />{esCoordinador ? "Coordinación" : "IA Biomédica"}</div>
         <button onClick={() => setTab("ajustes")} aria-label="Ajustes"
-          style={{ background: "none", border: 0, color: tab === "ajustes" ? "var(--amber)" : "var(--muted)",
+          style={{ background: "none", border: 0, color: tabActual === "ajustes" ? "var(--amber)" : "var(--muted)",
             fontSize: 19, cursor: "pointer", padding: "2px 0 2px 10px", lineHeight: 1 }}>⚙</button>
       </div>
       <div className="strip">
@@ -2180,25 +2234,25 @@ function App() {
     {editando
       ? <Formulario borrador={editando} mapa={mapa} faltantes={faltantes}
           guardar={guardarBorrador} enviar={encolar} cancelar={() => { setEditando(null); refrescar(); }} />
-      : tab === "tablero" ? <Tablero tareas={tareas} cargar={cargarTareas} cargando={cargandoTareas}
+      : tabActual === "tablero" ? <Tablero tareas={tareas} cargar={cargarTareas} cargando={cargandoTareas}
           error={errTareas} esAdmin={esCoordinador} yo={ingeniero} guardar={guardarTarea}
-          mover={moverTarea} eliminar={eliminarTarea}
+          mover={moverTarea} eliminar={eliminarTarea} esVisualizador={esVisualizador}
           enviarReporte={enviarReporte} enviandoRep={enviandoRep}
           enviarUbicaciones={enviarUbicaciones} enviandoUbic={enviandoUbic}
           ingenieros={(mapa.ingeniero && mapa.ingeniero.opciones) || INGENIEROS} />
-      : tab === "borradores" ? <ListaBorradores borradores={misBorradores} mapa={mapa} enviar={encolar}
+      : tabActual === "borradores" ? <ListaBorradores borradores={misBorradores} mapa={mapa} enviar={encolar}
           cola={cola} enviando={enviando} reintentar={() => procesarCola(true)}
           devolver={async id => { const o = await Store.one("outbox", id); await Store.del("outbox", id); if (o) await Store.put("drafts", { ...o, actualizada: Date.now() }); await refrescar(); avisar("Regresó a borradores"); }}
           abrir={b => setEditando(b)} nuevo={() => setEditando(nuevaOrden(ingeniero))}
           borrar={async id => { await Store.del("drafts", id); await refrescar(); avisar("Borrador eliminado"); }} />
-      : tab === "envios" ? <MisEnvios ingeniero={ingeniero} enviados={enviados} cargar={cargarEnvios} cargando={cargandoEnvios} error={errEnvios} />
-      : tab === "avisos" ? <Avisos ingeniero={ingeniero} avisos={avisos} cargar={cargarAvisos}
+      : tabActual === "envios" ? <MisEnvios ingeniero={ingeniero} enviados={enviados} cargar={cargarEnvios} cargando={cargandoEnvios} error={errEnvios} />
+      : tabActual === "avisos" ? <Avisos ingeniero={ingeniero} avisos={avisos} cargar={cargarAvisos}
           cargando={cargandoAvisos} error={errAvisos} esCoordinador={esCoordinador}
           ingenieros={(mapa.ingeniero && mapa.ingeniero.opciones) || INGENIEROS} guardar={guardarAviso} />
-      : tab === "usuarios" ? <Usuarios usuarios={usuariosAdmin} cargar={cargarUsuariosAdmin}
+      : tabActual === "usuarios" ? <Usuarios usuarios={usuariosAdmin} cargar={cargarUsuariosAdmin}
           cargando={cargandoUsuarios} error={errUsuarios} guardar={guardarUsuario} yo={ingeniero}
           ingenieros={(mapa.ingeniero && mapa.ingeniero.opciones) || INGENIEROS} />
-      : tab === "chat" ? <Chat ingeniero={ingeniero} sesion={sesion} esCoordinador={esCoordinador}
+      : tabActual === "chat" ? <Chat ingeniero={ingeniero} sesion={sesion} esCoordinador={esCoordinador}
           hilos={hilos} cargarHilos={cargarHilos} cargando={cargandoChat} error={errChat}
           hiloAbierto={hiloAbierto} abrirHilo={abrirHilo} cerrarHilo={() => { setHiloAbierto(null); cargarHilos(); }}
           mensajes={mensajes} enviarMensaje={enviarMensaje} enviando={enviandoMsj}
@@ -2219,9 +2273,11 @@ function App() {
     {toast && <div className={"toast" + (toast.malo ? " bad" : "")}>{toast.msg}</div>}
 
     {!editando && <nav className="tabs">
-      {[["tablero", "▦", "Tablero"], ["borradores", "▤", "Borradores"], ["envios", "✓", "Mis envíos"],
-        ["avisos", "⚑", "Avisos"], ["chat", "✉", "Chat"]].map(([k, ic, et]) =>
-        <button key={k} aria-current={tab === k ? "page" : undefined}
+      {(esVisualizador
+        ? [["tablero", "▦", "Tablero"]]
+        : [["tablero", "▦", "Tablero"], ["borradores", "▤", "Borradores"], ["envios", "✓", "Mis envíos"],
+           ["avisos", "⚑", "Avisos"], ["chat", "✉", "Chat"]]).map(([k, ic, et]) =>
+        <button key={k} aria-current={tabActual === k ? "page" : undefined}
           onClick={() => k === "avisos" ? verAvisos() : setTab(k)}>
           <span className="ic">{ic}</span>{et}
           {k === "borradores" && cola.length > 0 && <span className="badge">{cola.length}</span>}
