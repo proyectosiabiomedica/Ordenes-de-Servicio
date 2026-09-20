@@ -558,6 +558,193 @@ Dos causas distintas, ambas resueltas:
 
 **Verificación de unidad.** Heredar del encabezado anterior tiene un riesgo: un renglón de `Temperatura inicial (°C)` colocado después del rango de `Flujo (L/m)` lo heredaría por simple vecindad. Ahora se compara la unidad declarada entre paréntesis y solo se hereda si son compatibles. La comparación unifica el cero y la letra O —`(cmH20)` y `(cmH2O)` son la misma— y admite abreviaturas —`(L/min)` y `(L/m)`— porque los ingenieros usan ambas indistintamente.
 
+## 4.13 Editar usuarios y cambiar el PIN (v3.6)
+
+### El administrador edita
+
+Cada renglón de la lista tiene un botón **Editar** que carga a esa persona en el formulario. Se le puede cambiar el nombre, el rol y el PIN:
+
+- **Dejar el PIN vacío conserva el actual.** Solo se reemplaza si se escribe uno nuevo, y en ese caso el anterior deja de servir de inmediato.
+- **Renombrar mueve el registro existente**, no crea otro. Esto importa: si se creara uno nuevo, el registro viejo se quedaría con su PIN vivo y esa persona seguiría entrando con el nombre anterior. El servidor recibe el nombre original justamente para saber qué renglón tocar.
+- Un nombre que ya ocupe otra persona se rechaza, igual que un PIN repetido.
+- La bitácora guarda el cambio completo, incluido el nombre anterior cuando hubo renombramiento.
+
+### Cada quien cambia su propio PIN
+
+Botón **Cambiar mi PIN** al pie del menú lateral. Pide el PIN actual, el nuevo y su confirmación.
+
+No hace falta ser administrador, pero sí demostrar que el PIN actual es suyo: el servidor identifica a la persona por ese PIN, igual que en el ingreso. De ahí se siguen dos cosas que conviene tener claras: **nadie puede cambiarle el PIN a otro**, ni siquiera conociendo su nombre, y **el administrador no se entera del PIN nuevo**. Si alguien olvida el suyo, el camino es que el administrador le asigne uno desde *Editar*, no recuperar el anterior: las huellas no se pueden revertir.
+
+El cambio respeta las mismas reglas que el alta: mínimo 4 caracteres (se recomiendan 6), no puede repetir el PIN de otra persona ni coincidir con el código maestro. Los intentos fallidos cuentan para el bloqueo por dispositivo.
+
+## 4.14 Las cuatro pestañas de servicio (v3.7)
+
+| Pestaña | Qué agrupa | Columna de próximo servicio |
+|---|---|---|
+| **Preventivos** | Mantenimiento preventivo | Sí, con botón de rutina |
+| **Calibraciones** | Calibración | Sí, con botón de rutina |
+| **Correctivos / Asistencias** | Mantenimiento correctivo y asistencia técnica | No |
+| **Entregas / Materiales** | Entrega de material o refacciones | No |
+
+La quinta pestaña, **Comunicación y Seguimiento**, no cambió.
+
+La clasificación se hace sobre el tipo de servicio de la orden y es **excluyente, por precedencia** de lo más específico a lo más general: calibración, luego entrega/material, luego correctivo/asistencia y al final preventivo. Así una orden de *"Preventivo con calibración"* cuenta como calibración y aparece una sola vez; si se permitiera que cayera en dos pestañas, los conteos sumarían doble y el total dejaría de cuadrar.
+
+Los recuadros del encabezado siguen resumiendo por familia —preventivos más calibraciones por un lado, correctivos más entregas por el otro—, porque ahí interesa la proporción entre trabajo programado y no programado.
+
+Cada pestaña lleva su propia búsqueda por texto, filtro de año y de mes, impresión y exportación a CSV. Las cuatro comparten el mismo código: una definición por pestaña y renderizadores genéricos, de modo que un ajuste en el comportamiento vale para todas.
+
+## 4.15 Tarifario y facturación: las hojas (v3.7)
+
+Dos hojas nuevas en el mismo archivo de Google. Se crean ejecutando **una vez** `setupPreciosYFacturacion()` desde el editor de Apps Script.
+
+### Hoja `Precios`
+
+| Equipo | Nivel I | Nivel II | Nivel III | Notas |
+|---|---|---|---|---|
+| Máquina de anestesia | $2,800.00 | $3,400.00 | $4,100.00 | |
+| Ventilador volumétrico | $2,200.00 | $2,700.00 | $3,300.00 | |
+
+La tarifa es **por tipo de equipo y por nivel de convenio**: el mismo equipo cuesta distinto en cada hospital según el convenio que tenga, y la exportación elige qué nivel aplicar.
+
+`setupPreciosYFacturacion()` **siembra la hoja con los tipos de equipo que ya aparecen en las órdenes de trabajo**, ordenados alfabéticamente, para no capturar el catálogo desde cero: quedan los renglones listos y solo hay que escribir los importes. Se puede volver a ejecutar cuando entren equipos nuevos; agrega únicamente los que falten y no toca los precios ya capturados.
+
+El nombre del equipo se compara sin acentos y por contención, así que *"Máquina de anestesia"* case con *"MAQUINA DE ANESTESIA FABIUS 2"*. Conviene capturar el tipo genérico, no el modelo específico.
+
+### Hoja `Facturacion`
+
+| Orden | Cliente/Unidad | Número de factura | Fecha de factura | Registrado por | Registrado el |
+|---|---|---|---|---|---|
+
+Una factura cubre varios servicios, así que se guarda **un renglón por cada orden facturada** con el número y la fecha de su factura. El mismo número se repite en todas las órdenes que esa factura ampara, lo que permite responder las dos preguntas de una auditoría financiera: *¿esta orden ya se facturó?* y *¿qué cubre esta factura?*
+
+## 4.14 Tarifario de mantenimiento (v3.8)
+
+### Cómo crear la hoja
+
+En el editor de Apps Script, ejecuta **una vez** la función `crearHojasTarifarioYFacturacion()`. Crea dos pestañas en el mismo archivo y no toca las que ya existan, así que es seguro volver a ejecutarla.
+
+**`Precios_Mantenimiento`** — un renglón por tipo de equipo:
+
+| Tipo de servicio | Tipo de equipo | Nivel I | Nivel II | Nivel III | Moneda | Notas |
+|---|---|---|---|---|---|---|
+| Preventivo | Máquina de anestesia | 3500 | 4200 | 5100 | MXN | |
+| Preventivo | Ventilador | 2800 | 3400 | 4100 | MXN | |
+| Preventivo | Desfibrilador | 1900 | 2300 | 2800 | MXN | |
+
+**El tarifario cubre solo preventivos y calibraciones**, que son servicios de alcance conocido. Los correctivos, asistencias, entregas y materiales son de **precio variable** —dependen de la refacción, del tiempo, de lo que se entregó— y su importe se captura al registrar la factura (4.15).
+
+Los tres niveles son el mismo servicio a distinta tarifa según el **convenio del hospital**: una máquina de anestesia cuesta distinto según el convenio, y al exportar se elige qué nivel aplicar. La columna *Tipo de servicio* va por delante para que la misma hoja pueda sostener después las tarifas de calibración o de correctivo sin rehacerla; si se deja vacía se entiende Preventivo.
+
+### Cómo empareja los equipos
+
+El tarifario habla de **tipos de equipo** y las órdenes de equipos concretos: la hoja dice `Ventilador` y la orden dice `Ventilador volumétrico Puritan Bennett 840`. El emparejamiento busca primero coincidencia exacta y luego por contención, **prefiriendo siempre el nombre más largo** que coincida, para que `Ventilador neonatal` gane sobre `Ventilador` cuando ambos están capturados.
+
+De ahí se sigue la forma práctica de llenarlo: **basta capturar el tipo genérico**, y solo agregar variantes más específicas cuando su tarifa difiera.
+
+El panel de administrador muestra el tarifario **tal como quedó leído** y, debajo, la lista de tipos de equipo del historial **que no tienen tarifa**. Esos saldrían sin precio en la exportación, así que conviene revisar esa lista antes de exportar por primera vez.
+
+## 4.15 Facturación (v3.8)
+
+### El registro es la factura, no la orden
+
+En la práctica una factura cubre varios servicios, así que lo que se guarda es la factura: **número, fecha y las órdenes que ampara**. Esto es lo que permite la consulta y la auditoría financiera: desde una factura se ve qué se cobró, y desde una orden se ve en qué factura salió.
+
+En las cuatro pestañas de servicio:
+
+1. Se seleccionan las órdenes con la casilla de cada renglón (o la del encabezado para todo lo visible, que respeta los filtros de año y mes).
+2. Aparece la barra **Marcar como facturado**, que pide número y fecha de factura y muestra la lista de órdenes que va a cubrir, con opción de quitar alguna antes de guardar.
+3. La columna **Factura** muestra el folio y su fecha. Al hacer clic en el folio se abre la factura completa para corregirla, quitarle órdenes o eliminarla.
+
+### El importe se captura por servicio
+
+Al registrar la factura, cada orden lleva su propio importe:
+
+- **Preventivos y calibraciones**: se sugiere el precio del tarifario según el **nivel de convenio** elegido en el propio modal, y se puede corregir si se facturó otra cantidad. El campo se resalta cuando difiere del tarifario.
+- **Correctivos, asistencias, entregas y materiales**: el campo llega vacío con la leyenda *precio variable*, porque no hay tarifa que sugerir. Lo que se capture aquí es lo que va formando la base de precios real de estos servicios.
+
+El total se calcula solo y se guarda con la factura, junto con el nivel de convenio aplicado. En la hoja, los importes viven en la misma celda que las órdenes con la forma `601=2800, 602=3000`: se eligió una sola celda con pares, y no dos columnas paralelas, porque dos listas separadas se desalinean en cuanto alguien edita a mano y el importe termina asignado a la orden equivocada.
+
+### Una orden no puede estar en dos facturas
+
+El servidor lo hace valer y rechaza el guardado señalando con qué factura choca. En una revisión financiera, un servicio cobrado dos veces es justo lo que no debe pasar, y un mensaje incómodo al capturar es preferible a un hallazgo de auditoría.
+
+La interfaz colabora: si entre lo seleccionado hay órdenes ya facturadas, las excluye y lo dice en lugar de fallar al guardar.
+
+### Quién puede facturar
+
+Por omisión, cualquier usuario con PIN válido, y su nombre queda en la bitácora junto con el número de factura y la cantidad de órdenes. Si la facturación la lleva solo una persona, `FACTURACION_SOLO_ADMIN = true` en `Code.gs` la restringe a los administradores.
+
+## 4.16 Exportación del calendario de servicios (v3.9)
+
+Botón **Exportar calendario** en las cuatro pestañas de servicio. Abre con el tipo de servicio de la pestaña desde la que se pulsó.
+
+### Parámetros
+
+| Parámetro | Opciones |
+|---|---|
+| **Periodo** | Anual · Semestral · Mensual, **por año calendario**: el primer semestre es enero–junio y el segundo julio–diciembre |
+| **Año** | Los años presentes en el historial de esa unidad |
+| **Tipo de servicio** | Preventivos · Calibraciones · Correctivos/Asistencias · Entregas/Materiales · Todos |
+| **Nivel de precio** | I · II · III, según el convenio del hospital |
+
+Debajo de los parámetros, un resumen en vivo dice cuántos servicios caen en el periodo, el importe y cuántos quedarían sin precio, antes de generar el archivo.
+
+### Qué contiene
+
+Un renglón por servicio y **una columna por mes del periodo**. El precio se coloca **en la columna del mes en que se realizó el servicio**, que es lo que permite leer de un vistazo cuánto se generó cada mes.
+
+Columnas fijas: equipo, marca, modelo, número de serie, número de orden, tipo de servicio, fecha del servicio, **número de factura** y **fecha de factura** —las dos últimas se llenan solas desde el registro de facturación (4.15)—. Al final, total por mes e importe del periodo.
+
+### Servicios sin tarifa
+
+Aparecen con el precio en blanco y se cuentan aparte, tanto en el resumen como al pie del archivo. **No se omiten**: esconderlos daría un total que parece completo sin serlo, y en una revisión financiera esa es la diferencia entre un número correcto y uno engañoso. Para corregirlo, el panel de administrador lista los tipos de equipo sin tarifa (4.14).
+
+### Formatos
+
+- **Excel** (.xlsx). La librería que genera el archivo se descarga **solo al exportar**, no en cada visita: no tiene sentido pesarle la carga a quien nunca usa esta pantalla. Queda guardada por el service worker, así que a partir de la primera vez funciona aunque el hospital bloquee ese dominio.
+- **PDF**. Se arma la hoja y se manda al diálogo de impresión, donde se elige *Guardar como PDF*. Es el mismo camino que ya usa el generador de rutinas. Se imprime **apaisado**, porque un calendario de doce meses no cabe vertical.
+
+## 4.17 Auditoría financiera (v4.0)
+
+Apartado propio en el menú lateral, **exclusivo del administrador**: el botón no aparece para los demás usuarios y la vista se rechaza aunque se invoque a mano.
+
+El resto de la plataforma mira la operación —qué equipo se atendió y cuándo—; esta vista mira el dinero, y por eso **invierte el eje**: el renglón es la factura y debajo cuelgan los servicios que ampara.
+
+### Dos listas, porque una auditoría pregunta dos cosas
+
+**Facturas emitidas.** Cada factura muestra folio, fecha, unidad, cuántos servicios ampara e importe. Al abrirla se despliega el detalle de cada servicio con tres columnas de dinero:
+
+| Columna | Qué es |
+|---|---|
+| **Facturado** | Lo que se capturó al registrar la factura. Es el dato real |
+| **Tarifario** | Lo que debía cobrarse según el tarifario y el nivel de la factura. En correctivos y entregas dice *variable*, porque no hay contra qué contrastar |
+| **Diferencia** | Facturado menos tarifario. En verde cuando coinciden, en ámbar cuando no |
+
+Esa comparación es el punto de toda la mecánica: en preventivos y calibraciones permite ver **si se cobró lo que correspondía**, y en los de precio variable va formando el histórico de lo que realmente se cobra por ese tipo de trabajo.
+
+Arriba de los indicadores aparecen dos avisos cuando corresponde: servicios facturados por un importe distinto al del tarifario, y servicios facturados **sin importe capturado**.
+
+**Servicios sin facturar.** Lo ejecutado y todavía no cobrado, con orden, unidad, equipo, fecha e importe estimado. **Suele ser la lista que importa**: un servicio prestado y no facturado no aparece en ningún lado hasta que alguien lo busca, y la plataforma ya tiene los dos datos necesarios para encontrarlo.
+
+### Indicadores
+
+Arriba, cuatro cifras del periodo filtrado: facturas emitidas, importe facturado, servicios sin facturar e importe pendiente. Los importes se calculan con el **nivel de precio** elegido, así que cambiar de nivel recalcula todo en el momento.
+
+### Filtros
+
+Unidad (o todas), año, periodo (todo el año, enero–junio, julio–diciembre), nivel de precio y búsqueda libre por número de factura, orden o equipo. **El periodo de las facturas se mide por la fecha de la factura**, y el de los servicios pendientes por la fecha del servicio: son preguntas distintas y cada una se mide por su propia fecha.
+
+### Dos señales de revisión
+
+- **Sin tarifa.** Servicios cuyo equipo no está en el tarifario: se muestran marcados y no suman al importe, en lugar de omitirse.
+- **Sin respaldo.** Folios registrados dentro de una factura que ya no existen en el historial descargado. Puede ser una orden capturada mal, o una eliminada después de facturarse. En una revisión financiera es exactamente el tipo de hallazgo que conviene ver señalado.
+
+### Exportación
+
+- **Excel**: dos hojas, *Facturado* —una línea por servicio, con su factura— y *Sin facturar*, cada una con su total.
+- **PDF**: despliega todas las facturas con su detalle y manda la vista al diálogo de impresión.
+
 ## 5. Comportamientos automáticos relevantes
 
 - **Mes de ejecución**: se deriva de `FECHA DE INICIO:`; la hoja no necesita columna "Mes".
@@ -596,6 +783,11 @@ Dos causas distintas, ambas resueltas:
 | Un parámetro heredó un rango de otra magnitud | Está debajo del encabezado de otro parámetro y comparten unidad, o ninguno declara unidad entre paréntesis | Capturar su propio renglón de *Rango estándar de operación* antes de sus mediciones |
 | El rango sale marcado con `*` | Ese parámetro no trae renglón de rango en la orden; se está usando el de configuración | Capturar el renglón *Rango estándar de operación* antes de las mediciones de ese parámetro, o editar la celda antes de imprimir |
 | Un parámetro heredó un rango que no le corresponde | Está debajo de un renglón de rango de otro parámetro y sí es comparable | Capturar su propio renglón de rango antes de sus mediciones |
+| Una factura aparece con "sin respaldo" | Ampara un folio que ya no está en el historial descargado | Revisar en la pestaña `Facturacion` de la hoja si el número de orden se capturó mal, o si la orden se eliminó después de facturarse |
+| La exportación a Excel falla | No se pudo descargar la librería que genera el archivo | Revisar la conexión y reintentar; la primera vez requiere acceso a cdnjs. Como alternativa inmediata, exportar a PDF |
+| Un equipo sale sin precio al exportar | Su tipo no está en el tarifario | Revisar la lista de equipos sin tarifa en el panel de administrador y capturar el tipo genérico |
+| No se puede marcar una orden como facturada | Ya está en otra factura | Abrir el folio de la columna Factura para ver en cuál quedó |
+| Un ingeniero olvidó su PIN | Las huellas no se pueden revertir: el PIN anterior no se recupera | El administrador le asigna uno nuevo desde **Editar**, y esa persona lo cambia después con *Cambiar mi PIN* |
 | Un ingeniero no puede entrar y su nombre sí está dado de alta | Está inactivo, el PIN cambió, o se agotaron los intentos | Revisar su estado en **Usuarios**; si hay bloqueo, esperar 10 minutos. La bitácora registra el motivo de cada intento fallido |
 | El código maestro no funciona | No se volvió a implementar el `Code.gs` después de cambiarlo, o tiene menos de 6 caracteres | Implementar → Administrar implementaciones → editar → Nueva versión, y usar un código de al menos 6 caracteres |
 | Todos los PIN dejaron de servir de golpe | Se cambió `SAL_PIN` después de dar de alta usuarios | Volver a la sal anterior, o volver a capturar el PIN de cada usuario |
@@ -632,6 +824,13 @@ Dos causas distintas, ambas resueltas:
 
 | Versión | Cambios principales |
 |---|---|
+| 3.7 | **Cuatro pestañas de servicio** en la vista de unidad: Preventivos, Calibraciones, Correctivos/Asistencias y Entregas/Materiales, más la de Comunicación y Seguimiento. La clasificación es excluyente por precedencia, de modo que una orden aparece en una sola pestaña y los conteos no se duplican. Cada pestaña tiene búsqueda por texto, filtro de año y mes, impresión y exportación propias; las dos primeras conservan la columna de próximo servicio y el botón de rutina. **Hojas `Precios` y `Facturacion`** creadas por `setupPreciosYFacturacion()`, que además siembra el tarifario con los tipos de equipo ya presentes en las órdenes |
+| 4.2 | Correcciones reportadas desde el uso. **Los avisos se retiran solos** a los 8 segundos y traen botón de cierre, igual que el banner de error; antes se quedaban fijos y se iban encimando. **La credencial de administrador se comprueba contra el servidor antes de abrir el apartado**: antes se guardaba cualquier cosa que se escribiera y la pantalla se abría igual, así que parecía que cualquier código servía. **Los paneles de usuarios y auditoría ya se pueden deslizar**: vivían fuera de `<main>`, colgados del `body`, y al no estar en el contenedor con scroll la parte de abajo quedaba inalcanzable. **El tarifario se muestra resumido** —tarifas cargadas, equipos con y sin tarifa— con el detalle detrás de *Ver detalle* |
+| 4.1 | **El tarifario cubre solo preventivos y calibraciones**; correctivos, asistencias, entregas y materiales son de precio variable y su importe **se captura al registrar la factura**, orden por orden. La factura guarda el importe de cada servicio y su nivel de convenio, de modo que la auditoría contrasta, en preventivos y calibraciones, **lo facturado contra lo que el tarifario dice que debía facturarse**, y en los de precio variable va formando la base de precios real. **La auditoría financiera queda restringida al administrador** |
+| 4.0 | **Auditoría financiera**, apartado propio en el menú lateral. Invierte el eje del resto de la plataforma: el renglón es la **factura** y debajo cuelgan los servicios que ampara, con equipo, serie, fecha e importe. Filtros por unidad, año, semestre, nivel de precio y texto libre. Segunda lista de **servicios sin facturar**: lo ejecutado y todavía no cobrado, con su importe estimado. Cuatro indicadores arriba (facturas emitidas, importe facturado, servicios sin facturar e importe pendiente) y exportación a Excel —dos hojas, facturado y pendiente— o a PDF. Señala además las **órdenes sin respaldo**: folios registrados en una factura que ya no existen en el historial |
+| 3.9 | **Exportación del calendario de servicios**, con botón en las cuatro pestañas. Se elige periodo por año calendario (anual, semestral enero-junio o julio-diciembre, o un mes), tipo de servicio y nivel de precio, y sale un calendario valorizado: un renglón por servicio con equipo, marca, modelo, serie, número de orden, número y fecha de factura, y **el precio colocado en la columna del mes en que se realizó**, con totales por mes y del periodo. En **Excel** (.xlsx, con la librería cargada solo al exportar) o en **PDF** (hoja apaisada lista para imprimir o guardar). Los servicios sin tarifa aparecen con el precio en blanco y se cuentan aparte, en lugar de omitirse |
+| 3.8 | **Facturación de órdenes de servicio.** Una factura cubre varios servicios, así que el registro es la factura —número, fecha y las órdenes que ampara— y no una marca suelta por orden. En las cuatro pestañas de servicio hay casilla de selección, barra de *Marcar como facturado* y columna **Factura** con el folio; al hacer clic en el folio se abre la factura para corregirla o eliminarla. El servidor **rechaza que una orden quede en dos facturas** y señala con cuál choca. **Tarifario de mantenimiento** en la pestaña `Precios_Mantenimiento`: un renglón por tipo de equipo con tres niveles de precio según el convenio del hospital, creada con `crearHojasTarifarioYFacturacion()`, y una vista de solo lectura en el panel de administrador que muestra cómo quedó leída y **qué equipos del historial no tienen tarifa** |
+| 3.6 | **El administrador edita a los usuarios registrados**: botón *Editar* en cada renglón que carga sus datos en el formulario y permite cambiarle el nombre, el rol o el PIN; dejar el PIN vacío conserva el actual. Renombrar mueve el registro existente en lugar de crear uno nuevo, y el servidor rechaza un nombre que ya ocupe otra persona. **Cada usuario cambia su propio PIN** desde el menú lateral, demostrando que el actual es suyo; el administrador no se entera del nuevo. Ambos movimientos quedan en la bitácora |
 | 3.5 | Atiende las tres observaciones de los ingenieros sobre el generador de rutinas. **La tolerancia depende del tipo de equipo**: 5 % en soporte de vida (desfibrilador, máquina de anestesia, ventilador y vaporizador) y 10 % en el resto, en sustitución del criterio por parámetro, que queda disponible con `CRITERIO_TOLERANCIA = 'parametro'`. **Se evalúa también desplegado contra medido**: cuando la orden no trae valor programado —temperatura, presión de vía aérea, flujo— la referencia es el valor medido por el analizador y se evalúa lo que desplegó el equipo, así que esos renglones por fin tienen error y gráfica. **Rangos que no se cargaban**: los expresados como relación (`I:E 4:1-1:9`) se conservan como texto en lugar de intentar convertirlos en números, y los parámetros sin valor programado ya heredan el rango de su encabezado, con verificación de unidad para que un renglón de temperatura no herede el rango de flujo por estar debajo |
 | 3.4.2 | Los iconos pasan a la **raíz del repositorio**, sin la carpeta `iconos/`: era el paso donde se perdían al publicar, y su ausencia impedía la instalación sin explicación visible |
 | 3.4.1 | **Diagnóstico de instalación.** Cuando el navegador no ofrece instalar, no dice cuál requisito falta: simplemente no muestra el icono. Este diagnóstico los revisa uno por uno —HTTPS, manifiesto accesible y completo, iconos que se descargan, service worker activo, `sw.js` alcanzable— y señala en rojo el que falla. Se abre desde el enlace al pie del menú lateral o agregando `?diagnostico=1` a la dirección |
