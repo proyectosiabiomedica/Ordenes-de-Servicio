@@ -1,7 +1,7 @@
 /* Service worker · v2
    HTML y manifest: primero la red (para que una versión nueva llegue siempre).
    Librerías del CDN: primero la caché (para abrir sin señal). */
-const CACHE = 'ot-ia-v33';
+const CACHE = 'ot-ia-v34';
 const BASE = self.registration.scope;
 const CDN = [
   'https://unpkg.com/react@18/umd/react.production.min.js',
@@ -13,8 +13,12 @@ self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(async c => {
     await c.add(BASE + 'index.html').catch(() => {});
     await Promise.all(CDN.map(u => c.add(new Request(u, { mode: 'no-cors' })).catch(() => {})));
-    self.skipWaiting();
   }));
+});
+
+// La app avisa y, si el ingeniero acepta, pide el relevo con este mensaje
+self.addEventListener('message', e => {
+  if (e.data === 'actualizar') self.skipWaiting();
 });
 
 self.addEventListener('activate', e => {

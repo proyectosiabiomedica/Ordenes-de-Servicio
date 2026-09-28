@@ -129,6 +129,14 @@ nav.tabs .badge{position:absolute;top:5px;right:calc(50% - 20px);background:var(
 /* --- Aviso --- */
 .note{border-left:2px solid var(--amber);background:#0F2D45;padding:10px 12px;border-radius:0 8px 8px 0;font-size:13px;line-height:1.5;margin-bottom:12px;color:#D7EEFA}
 .note.bad{border-color:var(--alert);background:#2B1A18;color:#F8D8D2}
+/* Aviso de versión nueva: encima de la barra inferior, sin tapar el contenido */
+.actualizar{position:fixed;left:14px;right:14px;bottom:calc(84px + var(--safe-b));z-index:70;
+  background:var(--amber);color:#06182A;border-radius:10px;padding:12px 14px;display:flex;
+  align-items:center;gap:12px;box-shadow:0 10px 30px rgba(0,0,0,.45)}
+.actualizar .txt{flex:1;font-size:13.5px;line-height:1.4;font-weight:600}
+.actualizar button{background:#06182A;color:var(--amber);border:0;border-radius:7px;
+  padding:9px 14px;font-weight:700;font-size:13px;cursor:pointer;white-space:nowrap}
+.actualizar .x{background:none;color:#06182A;padding:9px 4px;font-weight:600;opacity:.7}
 .toast{position:fixed;left:14px;right:14px;bottom:calc(84px + var(--safe-b));z-index:60;background:var(--panel-2);border:1px solid var(--line);border-left:3px solid var(--mint);border-radius:8px;padding:12px 14px;font-size:13.5px;box-shadow:0 10px 30px rgba(0,0,0,.5)}
 .toast.bad{border-left-color:var(--alert)}
 /* Tablero: columnas con desplazamiento horizontal, una a la vez en el celular */
@@ -233,7 +241,7 @@ window.CONFIG = {
   // Token compartido: debe ser idéntico al del Apps Script
   TOKEN: "aiiPlCWrNHmMcqLQRrj9RK2QVnqfxSMzPYISzJ88dXNjB8Ys",
   FORM_ID: "260445478825062",
-  BUILD: "Rev.33"
+  BUILD: "Rev.34"
 };
 </script>
 
@@ -1251,6 +1259,7 @@ function Tablero({ tareas, cargar, cargando, error, esAdmin, esVisualizador, yo,
 
     return <main>
       <h2>Tablero</h2>
+      <p className="lead">Dónde está asignado cada ingeniero.</p>
       <div className="vistas">
         <button aria-pressed={true}>Por ingeniero</button>
         <button aria-pressed={false} onClick={() => setVista("calendario")}>Calendario</button>
@@ -1763,6 +1772,7 @@ function App() {
   const [errTareas, setErrTareas] = useState("");
   const [enviandoRep, setEnviandoRep] = useState(false);
   const [enviandoUbic, setEnviandoUbic] = useState(false);
+  const [versionNueva, setVersionNueva] = useState(null);
   const [hilos, setHilos] = useState([]);
   const [hiloAbierto, setHiloAbierto] = useState(null);
   const [mensajes, setMensajes] = useState([]);
@@ -1831,9 +1841,14 @@ function App() {
       leerEsquema(true);
       if (!ses0 || !ses0.token) cargarUsuariosPublicos();
     })();
+    const nueva = e => setVersionNueva(e.detail);
+    window.addEventListener("versionNueva", nueva);
     const on = () => setOnline(true), off = () => setOnline(false);
     window.addEventListener("online", on); window.addEventListener("offline", off);
-    return () => { window.removeEventListener("online", on); window.removeEventListener("offline", off); };
+    return () => {
+      window.removeEventListener("online", on); window.removeEventListener("offline", off);
+      window.removeEventListener("versionNueva", nueva);
+    };
   }, []);
 
 
@@ -2269,6 +2284,17 @@ function App() {
 
     {toast && <div className={"toast" + (toast.malo ? " bad" : "")}>{toast.msg}</div>}
 
+    {versionNueva && !editando && <div className="actualizar">
+      <span className="txt">Hay una versión nueva disponible</span>
+      <button onClick={() => {
+        // Si hay órdenes a medias se avisa: la recarga no las borra, pero
+        // conviene que el ingeniero lo sepa antes de que la pantalla cambie.
+        if (versionNueva.waiting) versionNueva.waiting.postMessage("actualizar");
+        else location.reload();
+      }}>Actualizar</button>
+      <button className="x" onClick={() => setVersionNueva(null)}>Después</button>
+    </div>}
+
     {!editando && <nav className="tabs">
       {(esVisualizador
         ? [["tablero", "▦", "Tablero"]]
@@ -2288,8 +2314,45 @@ function App() {
 window.__appLista = true;
 ReactDOM.createRoot(document.getElementById("root")).render(<App />);
 
+/* Actualizaciones: cuando hay una versión nueva esperando, se avisa en pantalla
+   en lugar de recargar solo. Recargar sin permiso en medio de una captura sería
+   peor que quedarse una hora con la versión anterior. */
 if ("serviceWorker" in navigator && location.protocol === "https:") {
-  window.addEventListener("load", () => navigator.serviceWorker.register("sw.js").catch(() => {}));
+  window.addEventListener("load", async () => {
+    try {
+      const reg = await navigator.serviceWorker.register("sw.js");
+
+      const revisar = () => {
+        if (reg.waiting && navigator.serviceWorker.controller) {
+          window.dispatchEvent(new CustomEvent("versionNueva", { detail: reg }));
+        }
+      };
+      revisar();
+      reg.addEventListener("updatefound", () => {
+        const nuevo = reg.installing;
+        if (!nuevo) return;
+        nuevo.addEventListener("statechange", () => {
+          if (nuevo.state === "installed" && navigator.serviceWorker.controller) {
+            window.dispatchEvent(new CustomEvent("versionNueva", { detail: reg }));
+          }
+        });
+      });
+
+      // Buscar versión nueva al abrir la app y cada media hora
+      const buscar = () => { if (navigator.onLine) reg.update().catch(() => {}); };
+      setInterval(buscar, 30 * 60 * 1000);
+      document.addEventListener("visibilitychange", () => {
+        if (document.visibilityState === "visible") buscar();
+      });
+
+      let recargando = false;
+      navigator.serviceWorker.addEventListener("controllerchange", () => {
+        if (recargando) return;
+        recargando = true;
+        location.reload();
+      });
+    } catch (e) { /* sin service worker la app sigue funcionando con conexión */ }
+  });
 }
 </script>
 </body>
