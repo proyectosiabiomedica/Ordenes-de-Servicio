@@ -5,7 +5,7 @@
    Corrige una falla seria de v34: el manifest.json se trataba como documento y su
    contenido se guardaba bajo la llave del index.html, de modo que sin señal la app
    mostraba el JSON del manifest en lugar de la aplicación. */
-const CACHE = 'ot-ia-v35';
+const CACHE = 'ot-ia-v38';
 const BASE = self.registration.scope;
 const PROPIOS = ['index.html', 'manifest.json', 'icon-192.png', 'icon-512.png'];
 const CDN = [

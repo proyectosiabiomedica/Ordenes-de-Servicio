@@ -241,7 +241,7 @@ window.CONFIG = {
   // Token compartido: debe ser idéntico al del Apps Script
   TOKEN: "aiiPlCWrNHmMcqLQRrj9RK2QVnqfxSMzPYISzJ88dXNjB8Ys",
   FORM_ID: "260445478825062",
-  BUILD: "Rev.35"
+  BUILD: "Rev.38"
 };
 </script>
 
@@ -453,6 +453,13 @@ const norm = s => (s || "").toString().normalize("NFD").replace(/[\u0300-\u036f]
 const hoyISO = () => { const d = new Date(); return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0"); };
 const horaISO = () => { const d = new Date(); return String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0"); };
 const fmtFecha = ts => { const d = new Date(ts); return d.toLocaleDateString("es-MX", { day: "2-digit", month: "short" }) + " " + d.toLocaleTimeString("es-MX", { hour: "2-digit", minute: "2-digit" }); };
+
+/** El nombre del formulario manda: si no coincide exactamente, Jotform rechaza. */
+function nombreDeFormulario(ingeniero, mapa) {
+  const ops = (mapa && mapa.ingeniero && mapa.ingeniero.opciones) || [];
+  const igual = ops.find(o => norm(o) === norm(ingeniero));
+  return igual || "";
+}
 
 function nuevaOrden(ingeniero) {
   const v = {};
@@ -735,6 +742,9 @@ function Identificacion({ onEntrar, usuarios, recargar, cargando }) {
 }
 
 function Formulario({ borrador, guardar, enviar, cancelar, mapa, faltantes }) {
+  // Si el nombre del usuario no está entre las opciones del formulario, la orden
+  // será rechazada por Jotform: más vale avisarlo desde el primer paso.
+  const opsIng = (mapa.ingeniero && mapa.ingeniero.opciones) || [];
   const [v, setV] = useState(borrador.valores);
   const [sec, setSec] = useState(borrador.seccion || 0);
   const [errs, setErrs] = useState([]);
@@ -751,6 +761,7 @@ function Formulario({ borrador, guardar, enviar, cancelar, mapa, faltantes }) {
   useEffect(() => { window.scrollTo({ top: 0, behavior: "instant" }); }, [sec]);
 
   const S = SECCIONES[sec], ultima = sec === SECCIONES.length - 1;
+  const sinNombre = !!opsIng.length && !!v.ingeniero && opsIng.indexOf(v.ingeniero) === -1;
   const sinMapear = S.campos.filter(c => faltantes.some(f => f.k === c.k));
 
   const intentarEnviar = () => {
@@ -765,6 +776,11 @@ function Formulario({ borrador, guardar, enviar, cancelar, mapa, faltantes }) {
     <p className="lead">Paso {sec + 1} de {SECCIONES.length} · se guarda solo mientras escribe</p>
 
     {!!errs.length && <div className="note bad">Faltan campos obligatorios: {errs.map(e => e.et).join(", ")}.</div>}
+    {sinNombre && <div className="note bad">
+      Su usuario no coincide con ningún ingeniero de la lista del formulario, así que la orden
+      no se puede enviar a su nombre. Elija uno en el paso de firmas o pida a coordinación que
+      corrija su nombre en Gestionar usuarios.
+    </div>}
     {!!sinMapear.length && <div className="note">Estos campos no se encontraron en el formulario de Jotform y no se enviarán: {sinMapear.map(c => c.et).join(", ")}. Revise la pestaña Ajustes.</div>}
 
     <div className="card">
@@ -787,11 +803,19 @@ function Formulario({ borrador, guardar, enviar, cancelar, mapa, faltantes }) {
   </main>;
 }
 
-function ListaBorradores({ borradores, abrir, borrar, nuevo, mapa, enviar, cola, enviando, reintentar, devolver }) {
+function ListaBorradores({ borradores, abrir, borrar, nuevo, mapa, enviar, cola, enviando, reintentar,
+  devolver, deOtros, verTodos, alternarTodos }) {
   return <main>
     <h2>Borradores</h2>
     <p className="lead">Órdenes sin terminar guardadas en este teléfono. Nada se pierde si cierra la app o se queda sin señal.</p>
     <button className="btn primary block" style={{ marginBottom: 14 }} onClick={nuevo}>Nueva orden de trabajo</button>
+
+    {/* Un borrador capturado con otro usuario nunca debe parecer perdido */}
+    {!!deOtros && <div className="note">
+      Hay {deOtros} borrador(es) capturado(s) con otro usuario en este dispositivo.
+      <button className="btn ghost block" style={{ marginTop: 8 }} onClick={alternarTodos}>
+        {verTodos ? "Ver solo los míos" : "Mostrarlos"}</button>
+    </div>}
 
     {/* Las órdenes en cola solo esperan señal: el resto vuelve solo a borradores */}
     {!!cola.length && <>
@@ -1773,6 +1797,7 @@ function App() {
   const [enviandoRep, setEnviandoRep] = useState(false);
   const [enviandoUbic, setEnviandoUbic] = useState(false);
   const [versionNueva, setVersionNueva] = useState(null);
+  const [verTodos, setVerTodos] = useState(false);
   const [hilos, setHilos] = useState([]);
   const [hiloAbierto, setHiloAbierto] = useState(null);
   const [mensajes, setMensajes] = useState([]);
@@ -1840,6 +1865,7 @@ function App() {
       setListo(true);
       leerEsquema(true);
       if (!ses0 || !ses0.token) cargarUsuariosPublicos();
+      else confirmarSesion(ses0.token);
     })();
     const nueva = e => setVersionNueva(e.detail);
     window.addEventListener("versionNueva", nueva);
@@ -1851,6 +1877,28 @@ function App() {
     };
   }, []);
 
+
+  /* El rol guardado en el teléfono puede haber cambiado en la hoja. Al abrir se
+     pregunta al servidor: si cambió, se actualiza; si la sesión ya no es válida
+     (baja, vencimiento), se pide el NIP otra vez. Sin conexión se conserva la
+     sesión guardada para no dejar al ingeniero fuera en campo. */
+  const confirmarSesion = async token => {
+    if (!navigator.onLine) return;
+    try {
+      const d = await Api.get({ action: "sesion", sesion: token });
+      if (!d.sesion) {
+        await Store.del("meta", "sesion");
+        await Store.del("meta", "ingeniero");
+        setSesion(""); setRol("operador"); setIngeniero("");
+        cargarUsuariosPublicos();
+        avisar("Su sesión terminó. Entre de nuevo con su NIP.", true);
+        return;
+      }
+      setRol(d.sesion.rol);
+      const ses = await Store.one("meta", "sesion");
+      if (ses) await Store.put("meta", { ...ses, rol: d.sesion.rol });
+    } catch (e) { /* sin respuesta se conserva lo guardado */ }
+  };
 
   const cargarUsuariosPublicos = useCallback(async () => {
     setCargandoUsuarios(true);
@@ -2024,6 +2072,13 @@ function App() {
   }, [enviando, esquema, mapa, refrescar]);
 
   useEffect(() => { if (online && listo && esquema) procesarCola(false); }, [online, listo, esquema]);
+
+  // Corrige el nombre guardado si difiere del que espera el formulario
+  const ajustarIngeniero = b => {
+    const bueno = nombreDeFormulario(b.valores.ingeniero || ingeniero, mapa);
+    if (!bueno || bueno === b.valores.ingeniero) return b;
+    return { ...b, valores: { ...b.valores, ingeniero: bueno } };
+  };
 
   const encolar = async b => {
     await Store.put("outbox", { ...b, creada: Date.now(), intentos: 0, error: "", errorEnvio: "" });
@@ -2218,7 +2273,11 @@ function App() {
   // una vista que su perfil no tiene.
   const tabActual = (esVisualizador && tab !== "tablero" && tab !== "ajustes") ? "tablero" : tab;
 
-  const misBorradores = borradores.filter(b => !b.valores.ingeniero || b.valores.ingeniero === ingeniero);
+  // Se compara normalizado: el nombre del usuario y el del formulario pueden
+  // diferir en un acento o un espacio, y esa diferencia escondía los borradores.
+  const misBorradores = borradores.filter(b =>
+    !b.valores.ingeniero || norm(b.valores.ingeniero) === norm(ingeniero));
+  const deOtros = borradores.length - misBorradores.length;
 
   return <>
     <header className="readout">
@@ -2252,10 +2311,13 @@ function App() {
           enviarReporte={enviarReporte} enviandoRep={enviandoRep}
           enviarUbicaciones={enviarUbicaciones} enviandoUbic={enviandoUbic}
           ingenieros={(mapa.ingeniero && mapa.ingeniero.opciones) || INGENIEROS} />
-      : tabActual === "borradores" ? <ListaBorradores borradores={misBorradores} mapa={mapa} enviar={encolar}
+      : tabActual === "borradores" ? <ListaBorradores borradores={verTodos ? borradores : misBorradores}
+          mapa={mapa} enviar={encolar} deOtros={deOtros} verTodos={verTodos}
+          alternarTodos={() => setVerTodos(v => !v)}
           cola={cola} enviando={enviando} reintentar={() => procesarCola(true)}
           devolver={async id => { const o = await Store.one("outbox", id); await Store.del("outbox", id); if (o) await Store.put("drafts", { ...o, actualizada: Date.now() }); await refrescar(); avisar("Regresó a borradores"); }}
-          abrir={b => setEditando(b)} nuevo={() => setEditando(nuevaOrden(ingeniero))}
+          abrir={b => setEditando(ajustarIngeniero(b))}
+          nuevo={() => setEditando(nuevaOrden(nombreDeFormulario(ingeniero, mapa)))}
           borrar={async id => { await Store.del("drafts", id); await refrescar(); avisar("Borrador eliminado"); }} />
       : tabActual === "envios" ? <MisEnvios ingeniero={ingeniero} enviados={enviados} cargar={cargarEnvios} cargando={cargandoEnvios} error={errEnvios} />
       : tabActual === "avisos" ? <Avisos ingeniero={ingeniero} avisos={avisos} cargar={cargarAvisos}
