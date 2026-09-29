@@ -1,8 +1,13 @@
-/* Service worker · v2
-   HTML y manifest: primero la red (para que una versión nueva llegue siempre).
-   Librerías del CDN: primero la caché (para abrir sin señal). */
-const CACHE = 'ot-ia-v34';
+/* Service worker · ot-ia-v35
+   Navegación: red primero, con el index.html de la caché como respaldo sin señal.
+   Todo lo demás: caché primero, guardado SIEMPRE bajo su propia URL.
+
+   Corrige una falla seria de v34: el manifest.json se trataba como documento y su
+   contenido se guardaba bajo la llave del index.html, de modo que sin señal la app
+   mostraba el JSON del manifest en lugar de la aplicación. */
+const CACHE = 'ot-ia-v35';
 const BASE = self.registration.scope;
+const PROPIOS = ['index.html', 'manifest.json', 'icon-192.png', 'icon-512.png'];
 const CDN = [
   'https://unpkg.com/react@18/umd/react.production.min.js',
   'https://unpkg.com/react-dom@18/umd/react-dom.production.min.js',
@@ -11,7 +16,7 @@ const CDN = [
 
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(async c => {
-    await c.add(BASE + 'index.html').catch(() => {});
+    await Promise.all(PROPIOS.map(f => c.add(BASE + f).catch(() => {})));
     await Promise.all(CDN.map(u => c.add(new Request(u, { mode: 'no-cors' })).catch(() => {})));
   }));
 });
@@ -32,26 +37,27 @@ self.addEventListener('fetch', e => {
   if (req.method !== 'GET') return;
   if (url.indexOf('script.google') !== -1 || url.indexOf('googleusercontent') !== -1) return;
 
-  const esDocumento = req.mode === 'navigate' ||
-    url.indexOf(BASE) === 0 && /\.(html|json)$/.test(url.split('?')[0]) ||
-    url === BASE;
-
-  if (esDocumento) {                       // red primero, caché de respaldo
+  // Solo una navegación real puede refrescar la copia del index.html
+  if (req.mode === 'navigate') {
     e.respondWith(
       fetch(req).then(res => {
-        const copia = res.clone();
-        caches.open(CACHE).then(c => c.put(BASE + 'index.html', copia)).catch(() => {});
+        if (res && res.ok) {
+          const copia = res.clone();
+          caches.open(CACHE).then(c => c.put(BASE + 'index.html', copia)).catch(() => {});
+        }
         return res;
-      }).catch(() => caches.match(BASE + 'index.html'))
+      }).catch(() => caches.match(BASE + 'index.html').then(r => r || caches.match(BASE)))
     );
     return;
   }
 
-  e.respondWith(                            // caché primero para lo demás
+  e.respondWith(
     caches.match(req).then(hit => hit || fetch(req).then(res => {
-      const copia = res.clone();
-      caches.open(CACHE).then(c => c.put(req, copia)).catch(() => {});
+      if (res && (res.ok || res.type === 'opaque')) {
+        const copia = res.clone();
+        caches.open(CACHE).then(c => c.put(req, copia)).catch(() => {});
+      }
       return res;
-    }))
+    }).catch(() => hit))
   );
 });
