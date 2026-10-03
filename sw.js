@@ -1,17 +1,18 @@
-/* Service worker · ot-ia-v35
+/* Service worker · ot-ia-v39
    Navegación: red primero, con el index.html de la caché como respaldo sin señal.
    Todo lo demás: caché primero, guardado SIEMPRE bajo su propia URL.
 
    Corrige una falla seria de v34: el manifest.json se trataba como documento y su
    contenido se guardaba bajo la llave del index.html, de modo que sin señal la app
    mostraba el JSON del manifest en lugar de la aplicación. */
-const CACHE = 'ot-ia-v38';
+const CACHE = 'ot-ia-v39';
 const BASE = self.registration.scope;
 const PROPIOS = ['index.html', 'manifest.json', 'icon-192.png', 'icon-512.png'];
+// La app ya viene compilada: solo hacen falta React y ReactDOM (antes también
+// Babel, de casi 3 MB, que con datos móviles impedía abrir la primera vez).
 const CDN = [
-  'https://unpkg.com/react@18/umd/react.production.min.js',
-  'https://unpkg.com/react-dom@18/umd/react-dom.production.min.js',
-  'https://unpkg.com/@babel/standalone@7.24.7/babel.min.js'
+  'https://cdnjs.cloudflare.com/ajax/libs/react/18.3.1/umd/react.production.min.js',
+  'https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.3.1/umd/react-dom.production.min.js'
 ];
 
 self.addEventListener('install', e => {

@@ -1,0 +1,2167 @@
+
+const { useState, useEffect, useRef, useCallback, useMemo } = React;
+
+/* ==========================================================
+   1. ALMACENAMIENTO LOCAL  (IndexedDB → localStorage → RAM)
+   ========================================================== */
+const Store = (() => {
+  const DB = "ot_ia_v2", STORES = ["drafts", "outbox", "sent", "meta", "chatCola"];
+  let db = null, modo = "memoria";
+  const mem = { drafts: {}, outbox: {}, sent: {}, meta: {}, chatCola: {} };
+
+  function abrir() {
+    return new Promise(res => {
+      if (!("indexedDB" in window)) return res(null);
+      let req;
+      try { req = indexedDB.open(DB, 2); } catch (e) { return res(null); }
+      req.onupgradeneeded = () => STORES.forEach(s => {
+        if (!req.result.objectStoreNames.contains(s)) req.result.createObjectStore(s, { keyPath: "id" });
+      });
+      req.onsuccess = () => res(req.result);
+      req.onerror = () => res(null);
+      setTimeout(() => res(null), 2500);
+    });
+  }
+  async function init() {
+    db = await abrir();
+    if (db) { modo = "indexeddb"; return modo; }
+    try { localStorage.setItem("__t", "1"); localStorage.removeItem("__t"); modo = "localstorage"; }
+    catch (e) { modo = "memoria"; }
+    return modo;
+  }
+  const lsKey = (s, id) => `${DB}:${s}:${id}`;
+  function lsAll(s) {
+    const out = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (k && k.startsWith(`${DB}:${s}:`)) { try { out.push(JSON.parse(localStorage.getItem(k))); } catch (e) {} }
+    }
+    return out;
+  }
+  function tx(s, m) { return db.transaction(s, m).objectStore(s); }
+
+  return {
+    init, get modo() { return modo; },
+    async put(s, obj) {
+      if (modo === "indexeddb") return new Promise((res, rej) => { const r = tx(s, "readwrite").put(obj); r.onsuccess = () => res(obj); r.onerror = () => rej(r.error); });
+      if (modo === "localstorage") { localStorage.setItem(lsKey(s, obj.id), JSON.stringify(obj)); return obj; }
+      mem[s][obj.id] = obj; return obj;
+    },
+    async del(s, id) {
+      if (modo === "indexeddb") return new Promise(res => { const r = tx(s, "readwrite").delete(id); r.onsuccess = () => res(); r.onerror = () => res(); });
+      if (modo === "localstorage") { localStorage.removeItem(lsKey(s, id)); return; }
+      delete mem[s][id];
+    },
+    async all(s) {
+      if (modo === "indexeddb") return new Promise(res => { const r = tx(s, "readonly").getAll(); r.onsuccess = () => res(r.result || []); r.onerror = () => res([]); });
+      if (modo === "localstorage") return lsAll(s);
+      return Object.values(mem[s]);
+    },
+    async one(s, id) { return (await this.all(s)).find(x => x.id === id) || null; }
+  };
+})();
+
+/* ==========================================================
+   2. TRANSPORTE  (JSONP para leer, POST text/plain para enviar)
+   ========================================================== */
+const Api = {
+  /* Camino 1: fetch directo. Apps Script permite CORS en la respuesta final,
+     así que este funciona desde GitHub Pages y devuelve el error HTTP real.
+     Camino 2 (respaldo): JSONP con <script>, por si una red bloquea el fetch. */
+  viaFetch(params) {
+    const q = new URLSearchParams({ ...params, token: CONFIG.TOKEN });
+    return fetch(`${CONFIG.PROXY_URL}?${q.toString()}`, { redirect: "follow" })
+      .then(async r => {
+        const txt = await r.text();
+        if (!r.ok) { const e = new Error("El proxy respondió HTTP " + r.status); e.servidor = true; throw e; }
+        let d;
+        try { d = JSON.parse(txt); }
+        catch (err) { const e = new Error("Respuesta ilegible del proxy: " + txt.slice(0, 120)); e.servidor = true; throw e; }
+        if (d && d.ok === false) { const e = new Error(d.error || "Error del servidor"); e.servidor = true; throw e; }
+        return d;
+      });
+  },
+  viaJsonp(params) {
+    return new Promise((res, rej) => {
+      const cb = "jp_" + Math.random().toString(36).slice(2);
+      const q = new URLSearchParams({ ...params, token: CONFIG.TOKEN, callback: cb });
+      const s = document.createElement("script");
+      const limpiar = () => { delete window[cb]; s.remove(); clearTimeout(t); };
+      const t = setTimeout(() => { limpiar(); rej(new Error("El proxy no respondió a tiempo")); }, 25000);
+      window[cb] = d => { limpiar(); (d && d.ok === false) ? rej(new Error(d.error || "Error del servidor")) : res(d); };
+      s.onerror = () => { limpiar(); rej(new Error("El navegador no pudo cargar el proxy")); };
+      s.src = `${CONFIG.PROXY_URL}?${q.toString()}`;
+      document.head.appendChild(s);
+    });
+  },
+  async get(params) {
+    if (!navigator.onLine) throw new Error("Sin señal. Se reintentará al reconectar.");
+    try {
+      return await Api.viaFetch(params);
+    } catch (e) {
+      if (e.servidor) throw e;              // el proxy contestó: no tiene caso reintentar
+      try { return await Api.viaJsonp(params); }
+      catch (e2) { throw new Error(e2.message + " · fetch: " + e.message); }
+    }
+  },
+  async post(body) {
+    const r = await fetch(CONFIG.PROXY_URL, {
+      method: "POST", redirect: "follow",
+      headers: { "Content-Type": "text/plain;charset=utf-8" },
+      body: JSON.stringify({ ...body, token: CONFIG.TOKEN })
+    });
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    const d = await r.json();
+    if (d.ok === false) throw new Error(d.error || "El servidor rechazó el envío");
+    return d;
+  }
+};
+
+/* ==========================================================
+   3. ESTRUCTURA DE LA ORDEN DE TRABAJO
+   Los campos se enlazan al formulario por su TEXTO de pregunta;
+   el qid real se resuelve contra el esquema descargado.
+   ========================================================== */
+const ESTADOS = ["Aguascalientes","Baja California","Baja California Sur","Campeche","Chiapas","Chihuahua","Ciudad de México","Coahuila","Colima","Durango","Estado de México","Guanajuato","Guerrero","Hidalgo","Jalisco","Michoacán","Morelos","Nayarit","Nuevo León","Oaxaca","Puebla","Querétaro","Quintana Roo","San Luis Potosí","Sinaloa","Sonora","Tabasco","Tamaulipas","Tlaxcala","Veracruz","Yucatán","Zacatecas"];
+const INGENIEROS = ["Arturo Maldonado Martínez","Daniel Cortez Perez","Edson Alfonso Corona Dávalos","Erick Geovanni Serrano Espíndola","Joaquín García Rojel","Martín Parra Chino"];
+
+const SECCIONES = [
+{ id:"fecha", titulo:"Fecha de servicio", campos:[
+  { k:"fechaIni", et:"Fecha de inicio", tipo:"datetime", req:true, m:{ label:"Fecha de Inicio:" } },
+  { k:"fechaFin", et:"Fecha de fin",    tipo:"datetime", req:true, m:{ label:"Fecha de Fin:" } },
+]},
+{ id:"unidad", titulo:"Unidad médica", campos:[
+  { k:"unidad",    et:"Unidad",    tipo:"texto", req:true, m:{ label:"UNIDAD:" } },
+  { k:"domicilio", et:"Domicilio", tipo:"texto", req:true, m:{ label:"DOMICILIO:" } },
+  { k:"telefono",  et:"Teléfono",  tipo:"tel",   req:true, m:{ label:"TELÉFONO:" } },
+  { k:"entidad",   et:"Entidad",   tipo:"select", req:true, opciones:ESTADOS, m:{ label:"ENTIDAD:" } },
+  { k:"email",     et:"Email",     tipo:"email", req:true, m:{ label:"EMAIL" } },
+]},
+{ id:"equipo", titulo:"Datos del equipo", campos:[
+  { k:"equipo",    et:"Equipo",           tipo:"texto", req:true, m:{ label:"EQUIPO:" } },
+  { k:"marca",     et:"Marca",            tipo:"texto", req:true, m:{ label:"MARCA:" } },
+  { k:"modelo",    et:"Modelo",           tipo:"texto", req:true, m:{ label:"MODELO:" } },
+  { k:"serie",     et:"Serie",            tipo:"texto", req:true, m:{ label:"SERIE:" } },
+  { k:"inventario",et:"Inventario",       tipo:"texto", req:true, m:{ label:"INVENTARIO:" } },
+  { k:"area",      et:"Área o ubicación", tipo:"texto", req:true, m:{ label:"ÁREA O UBICACIÓN:" } },
+]},
+{ id:"clasif", titulo:"Clasificación del servicio", campos:[
+  { k:"tipoServicio", et:"Tipo de servicio o mantenimiento", tipo:"checks", req:true, m:{ label:"TIPO DE SERVICIO O MANTENIMIENTO" },
+    opciones:["PREVENTIVO","CORRECTIVO","EVALUACIÓN","ASISTENCIA BIOMÉDICA","CURSO DE CAPACITACIÓN","GRABADO","CALIBRACIÓN","ENTREGA","INSTRUMENTAL"] },
+  { k:"tipoServicioOtro", et:"Otro tipo de servicio", tipo:"texto", m:{ label:"OTRO:", nth:1 } },
+  { k:"clasifRep", et:"Clasificación de la reparación", tipo:"checks", m:{ label:"CLASIFICACIÓN DE LA REPARACIÓN" },
+    opciones:["REPARACIÓN ELECTRÓNICA","REPARACIÓN ELÉCTRICA","REPARACIÓN MECÁNICA","REPARACIÓN HIDRÁULICA","REPARACIÓN NEUMÁTICA"] },
+  { k:"clasifRepOtro", et:"Otra clasificación", tipo:"texto", m:{ label:"OTRO:", nth:2 } },
+]},
+{ id:"medicion", titulo:"Equipo de medición", campos:[
+  { k:"equipoMedicion", et:"Equipo de medición y/o simulador utilizado", tipo:"checks", m:{ label:"EQUIPO DE MEDICIÓN Y/O SIMULADOR UTILIZADO" },
+    opciones:["ANÁLISIS EMA","RADIÓMETRO","TACÓMETRO","ELECTROCAUTERIO","SEGURIDAD ELÉCTRICA","SIGNOS VITALES (PANI, IBP, ECG, SPO2, TEMPERATURA)","DESFIBRILADOR","FLUJO Y VOLUMEN","INCUBADORA ( C, Hr, db, Lux, Caudal aire)","MARCAPASOS","PESAS","GASES","VERNIER"] },
+  { k:"equipoMedicionOtro", et:"Otro equipo de medición", tipo:"texto", m:{ label:"OTRO:", nth:3 } },
+  { k:"equipoCal", et:"Datos del equipo de calibración", tipo:"checks", m:{ label:"DATOS DEL EQUIPO DE CALIBRACIÓN" },
+    opciones:["SEG. ELEC. ESA 612 ns: 3595053","FLUKE PROSIM8 ns: 3737639.","REMEX PARALELEPÍPEDA 10 Kg.","FLUKE VT305 ns: BF100750","FLUKE SPOT LIGHT ns: 3562069","REMEX PARALELEPÍPEDA 5 Kg.","FLUKE IMPULSE 7000 DP ns: 4430700","LT LUTRON LM-8102 ns: AG-16162","RIKEN KEIKI FI-2l ns: 378040019 ES","TACHO METER 8000 ns: 956428","DNI NEVADA 454A ESA ns:2468","TES 1333 RADIÓMETRO ns: 070508925"] },
+  { k:"equipoCalOtro", et:"Otro equipo de calibración", tipo:"texto", m:{ label:"OTRO:", nth:4 } },
+  { k:"documentacion", et:"Documentación generada y anexada", tipo:"checks", m:{ label:"DOCUMENTACIÓN GENERADA Y ANEXADA" },
+    opciones:["RUTINA DE MANTENIMIENTO","RESULTADO DE CALIBRACIÓN","CERTIFICADO EMA"] },
+  { k:"certAnio", et:"Certificado de calibración vigente, año", tipo:"select", req:true, opciones:["2024","2025","2026"], m:{ prefijo:"CERTIFICADO DE CALIBRACIÓN VIGENTE" } },
+  { k:"documentacionOtro", et:"Otra documentación", tipo:"texto", m:{ label:"OTROS:" } },
+]},
+{ id:"descripcion", titulo:"Descripción del servicio", campos:[
+  { k:"d1", et:"1. Limpieza y desinfección con pruebas de funcionamiento", tipo:"checks", req:true, m:{ prefijo:"1.-" }, opciones:["REALIZADO","N\\A"] },
+  { k:"d2", et:"2. Condiciones estéticas del equipo", tipo:"checks", req:true, m:{ prefijo:"2.-" }, opciones:["REALIZADO","BUEN ESTADO","DETALLES ESTÉTICOS","N\\A"] },
+  { k:"d3", et:"3. Revisión de condiciones operativas", tipo:"checks", req:true, m:{ prefijo:"3.-" }, opciones:["REALIZADO","N\\A"] },
+  { k:"d4", et:"4. Reparación de equipo", tipo:"checks", req:true, m:{ prefijo:"4.-" }, opciones:["SI","NO","N\\A"] },
+  { k:"d5", et:"5. Cambio de refacciones", tipo:"checks", req:true, m:{ prefijo:"5.-" }, opciones:["SI","NO","PROPORCIONADOAS POR I.A","PROPORCIONADAS POR EL CLIENTE","N\\A"] },
+  { k:"d6", et:"6. Operatividad: apto para paciente", tipo:"checks", req:true, m:{ prefijo:"6.-" }, opciones:["SI","NO","FALTAN ACCESORIOS","N\\A"], negativas:["NO","FALTAN ACCESORIOS"] },
+  { k:"detalle", et:"Detalle de funcionalidad", tipo:"area", req:true, m:{ label:"DETALLE DE FUNCIONALIDAD:" } },
+]},
+{ id:"seguimiento", titulo:"Estatus y tecnovigilancia", campos:[
+  { k:"estatus", et:"Estatus de seguimiento", tipo:"checks", m:{ nombre:"escribaUna" },
+    opciones:["GARANTÍA","REQUIERE COTIZACIÓN","EN CONTRATO","A PRUEBA POR 8 DÍAS","FUERA DE SERVICIO"], negativas:["FUERA DE SERVICIO"] },
+  { k:"falloPaciente", et:"¿Equipo falló con paciente?", tipo:"select", opciones:["Si","No"], m:{ label:"¿EQUIPO FALLÓ CON PACIENTE?" } },
+  { k:"danoPaciente",  et:"¿Equipo falló y dañó a paciente?", tipo:"select", opciones:["Si","No"], m:{ label:"¿EQUIPO FALLÓ Y DAÑO A PACIENTE?" } },
+  { k:"mediciones", et:"Valores de medición", tipo:"tabla", m:{ label:"Valores de Medición" } },
+  { k:"observaciones", et:"Observaciones", tipo:"area", m:{ label:"OBSERVACIONES:" } },
+]},
+{ id:"firmas", titulo:"Evidencia y firmas", campos:[
+  { k:"fotos", et:"Evidencia fotográfica", tipo:"fotos", req:true, m:{ label:"Carga de archivo" } },
+  { k:"ingeniero", et:"Ingeniero de servicio", tipo:"select", req:true, opciones:INGENIEROS, m:{ label:"INGENIERO DE SERVICIO:" } },
+  { k:"firmaIng", et:"Firma del ingeniero", tipo:"firma", req:true, m:{ label:"Firma", nth:1 } },
+  { k:"responsable", et:"Responsable de área", tipo:"texto", m:{ label:"RESPONSABLE DE AREA" } },
+  { k:"firmaResp", et:"Firma del responsable", tipo:"firma", m:{ label:"Firma", nth:2 } },
+  { k:"jefeBio", et:"Jefe de biomédica", tipo:"texto", m:{ label:"JEFE DE BIOMÉDICA" } },
+  { k:"firmaJefe", et:"Firma del jefe de biomédica", tipo:"firma", m:{ label:"Firma", nth:3 } },
+]},
+];
+const TODOS = SECCIONES.flatMap(s => s.campos);
+
+/* ==========================================================
+   4. UTILIDADES
+   ========================================================== */
+const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+const norm = s => (s || "").toString().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\s+/g, " ").trim().toUpperCase().replace(/[:.]+$/, "");
+const hoyISO = () => { const d = new Date(); return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0"); };
+const horaISO = () => { const d = new Date(); return String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0"); };
+const fmtFecha = ts => { const d = new Date(ts); return d.toLocaleDateString("es-MX", { day: "2-digit", month: "short" }) + " " + d.toLocaleTimeString("es-MX", { hour: "2-digit", minute: "2-digit" }); };
+
+/** El nombre del formulario manda: si no coincide exactamente, Jotform rechaza. */
+function nombreDeFormulario(ingeniero, mapa) {
+  const ops = (mapa && mapa.ingeniero && mapa.ingeniero.opciones) || [];
+  const igual = ops.find(o => norm(o) === norm(ingeniero));
+  return igual || "";
+}
+
+function nuevaOrden(ingeniero) {
+  const v = {};
+  TODOS.forEach(c => {
+    v[c.k] = c.tipo === "checks" ? [] : c.tipo === "fotos" ? [] : c.tipo === "tabla" ? [{ m: "", prog: "", desp: "", med: "" }] : c.tipo === "datetime" ? { fecha: hoyISO(), hora: horaISO() } : "";
+  });
+  v.ingeniero = ingeniero || "";
+  // El folio acompaña a la orden toda su vida. Es lo que permite al proxy saber
+  // si un reintento corresponde a algo que ya se registró, y así no duplicarlo.
+  return { id: uid(), folio: "IAB-" + Math.floor(10000 + Math.random() * 90000),
+    creada: Date.now(), actualizada: Date.now(), seccion: 0, valores: v };
+}
+
+/* Resuelve cada campo contra el esquema real del formulario */
+const NO_CAPTURAN = ["control_head", "control_text", "control_button", "control_pagebreak",
+  "control_collapse", "control_divider", "control_image"];
+
+function resolverMapa(preguntas) {
+  // Los encabezados repiten el texto de la pregunta que anuncian ("ESTATUS DE
+  // SEGUIMIENTO", "INGENIERO DE SERVICIO:"). Si se enlazan, el dato se escribe
+  // en un título y se pierde: por eso quedan fuera de los candidatos.
+  const lista = Object.values(preguntas || {})
+    .filter(q => NO_CAPTURAN.indexOf(q.type) === -1)
+    .sort((a, b) => Number(a.order) - Number(b.order));
+  const mapa = {}, faltantes = [];
+  TODOS.forEach(c => {
+    let cand;
+    if (c.m.nombre) {
+      cand = lista.filter(q => q.name === c.m.nombre);
+    } else if (c.m.prefijo) {
+      cand = lista.filter(q => norm(q.text).startsWith(norm(c.m.prefijo)));
+    } else {
+      const L = norm(c.m.label);
+      cand = lista.filter(q => norm(q.text) === L);
+      if (!cand.length) cand = lista.filter(q => norm(q.text).startsWith(L) || norm(q.text).includes(L));
+    }
+    const q = cand[(c.m.nth || 1) - 1];
+    if (q) mapa[c.k] = { qid: q.qid, type: q.type, name: q.name, text: q.text,
+      timeFormat: q.timeFormat, obligatorio: String(q.required) === "Yes",
+      opciones: String(q.options || "").split("|").map(o => o.trim()).filter(Boolean) };
+    else faltantes.push(c);
+  });
+  return { mapa, faltantes };
+}
+
+/* Convierte el borrador a { qid: valor } listo para el proxy */
+function construirPayload(valores, mapa) {
+  const out = {};
+  TODOS.forEach(c => {
+    const m = mapa[c.k]; if (!m) return;
+    let v = valores[c.k];
+    if (c.tipo === "fotos") return;                       // se envían aparte
+    if (c.tipo === "checks") { if (!v || !v.length) return; out[m.qid] = { tipo: "checks", valor: v }; return; }
+    if (c.tipo === "datetime") { if (!v || !v.fecha) return; out[m.qid] = { tipo: "datetime", valor: v }; return; }
+    if (c.tipo === "tabla") {
+      const t = (v || []).filter(r => r.m || r.prog || r.desp || r.med);
+      if (!t.length) return; out[m.qid] = { tipo: "tabla", valor: t }; return;
+    }
+    if (c.tipo === "firma") { if (!v) return; out[m.qid] = { tipo: "firma", valor: v }; return; }
+    if (v !== "" && v != null) out[m.qid] = { tipo: "texto", valor: String(v) };
+  });
+  return out;
+}
+
+// Un campo es obligatorio si lo marcamos aquí o si Jotform lo exige. Tener una
+// lista propia hacía que la app dejara pasar órdenes que el formulario rechazaba.
+function faltanRequeridos(valores, mapa) {
+  return TODOS.filter(c => {
+    const exigido = c.req || (mapa && mapa[c.k] && mapa[c.k].obligatorio);
+    if (!exigido) return false;
+    const v = valores[c.k];
+    if (c.tipo === "fotos") return !v || !v.length;
+    if (c.tipo === "checks") {
+      if (!v || !v.length) return true;
+      const ops = mapa && mapa[c.k] && mapa[c.k].opciones;
+      return !!(ops && ops.length && v.some(x => ops.indexOf(x) === -1));
+    }
+    if (c.tipo === "datetime") return !v || !v.fecha;
+    if (c.tipo === "tabla") return !v || !v.filter(r => r.m || r.prog || r.desp || r.med).length;
+    if (!v) return true;
+    // Una opción que ya no existe en el formulario equivale a campo vacío:
+    // Jotform la rechaza con "Incomplete Values".
+    if (c.tipo === "select" && mapa && mapa[c.k] && mapa[c.k].opciones && mapa[c.k].opciones.length) {
+      return mapa[c.k].opciones.indexOf(v) === -1;
+    }
+    return false;
+  });
+}
+
+async function comprimirImagen(file, max = 1400, calidad = 0.72) {
+  const dataUrl = await new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = rej; r.readAsDataURL(file); });
+  const img = await new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = dataUrl; });
+  const esc = Math.min(1, max / Math.max(img.width, img.height));
+  const cv = document.createElement("canvas");
+  cv.width = Math.round(img.width * esc); cv.height = Math.round(img.height * esc);
+  cv.getContext("2d").drawImage(img, 0, 0, cv.width, cv.height);
+  return cv.toDataURL("image/jpeg", calidad);
+}
+
+/* ==========================================================
+   5. CAMPOS
+   ========================================================== */
+function Etiqueta({ c, obligatorio }) {
+  return <span className="lb">{c.et}{(c.req || obligatorio) && <em> *</em>}</span>;
+}
+
+function Campo({ c, valor, set, obligatorio, opciones }) {
+  if (c.tipo === "texto" || c.tipo === "tel" || c.tipo === "email")
+    return <label className="f"><Etiqueta c={c} obligatorio={obligatorio} />
+      <input type={c.tipo === "texto" ? "text" : c.tipo} value={valor || ""} onChange={e => set(e.target.value)}
+        inputMode={c.tipo === "tel" ? "tel" : undefined} autoComplete="off" /></label>;
+
+  if (c.tipo === "area")
+    return <label className="f"><Etiqueta c={c} obligatorio={obligatorio} /><textarea value={valor || ""} onChange={e => set(e.target.value)} /></label>;
+
+  if (c.tipo === "select") {
+    const ops = (opciones && opciones.length) ? opciones : c.opciones;
+    const invalido = valor && ops.indexOf(valor) === -1;
+    return <label className="f"><Etiqueta c={c} obligatorio={obligatorio} />
+      <select value={invalido ? "" : (valor || "")} onChange={e => set(e.target.value)}>
+        <option value="">Seleccione</option>
+        {ops.map(o => <option key={o} value={o}>{o}</option>)}
+      </select>
+      {invalido && <span style={{ display: "block", marginTop: 6, fontSize: 12, color: "var(--alert)" }}>
+        "{valor}" ya no es una opción válida del formulario. Elija una de la lista.
+      </span>}</label>;
+  }
+
+  if (c.tipo === "datetime") {
+    const v = valor || { fecha: "", hora: "" };
+    return <div className="f"><Etiqueta c={c} obligatorio={obligatorio} />
+      <div className="row">
+        <input type="date" value={v.fecha || ""} onChange={e => set({ ...v, fecha: e.target.value })} />
+        <input type="time" value={v.hora || ""} onChange={e => set({ ...v, hora: e.target.value })} />
+      </div></div>;
+  }
+
+  if (c.tipo === "checks") {
+    const ops = (opciones && opciones.length) ? opciones : c.opciones;
+    const sel = valor || [];
+    const alternar = o => set(sel.includes(o) ? sel.filter(x => x !== o) : [...sel, o]);
+    // Se compara sin acentos ni espacios raros para saber si una opción guardada
+    // sigue siendo válida: en el formulario hay valores con tabuladores dentro.
+    const sueltas = sel.filter(v => ops.indexOf(v) === -1);
+    return <div className="f"><Etiqueta c={c} obligatorio={obligatorio} />
+      <div className="chips">
+        {ops.map(o =>
+          <button key={o} type="button" className={"chip" + ((c.negativas || []).some(n => norm(n) === norm(o)) ? " neg" : "")}
+            aria-pressed={sel.includes(o)} onClick={() => alternar(o)}>{o.replace(/\s+/g, " ").trim()}</button>)}
+      </div>
+      {!!sueltas.length && <span style={{ display: "block", marginTop: 6, fontSize: 12, color: "var(--alert)" }}>
+        Hay opciones marcadas que ya no existen en el formulario. Vuelva a marcarlas arriba.
+      </span>}</div>;
+  }
+
+  if (c.tipo === "tabla") {
+    const filas = valor && valor.length ? valor : [{ m: "", prog: "", desp: "", med: "" }];
+    const cambiar = (i, k, val) => set(filas.map((f, j) => j === i ? { ...f, [k]: val } : f));
+    return <div className="f"><Etiqueta c={c} obligatorio={obligatorio} />
+      <table className="med">
+        <thead><tr><th>Medición</th><th>Valor programado</th><th>Valor desplegado</th><th>Valor medido</th><th></th></tr></thead>
+        <tbody>{filas.map((f, i) =>
+          <tr key={i}>
+            <td><input type="text" value={f.m} onChange={e => cambiar(i, "m", e.target.value)} /></td>
+            <td><input type="text" value={f.prog} onChange={e => cambiar(i, "prog", e.target.value)} /></td>
+            <td><input type="text" value={f.desp} onChange={e => cambiar(i, "desp", e.target.value)} /></td>
+            <td><input type="text" value={f.med} onChange={e => cambiar(i, "med", e.target.value)} /></td>
+            <td><button type="button" className="btn ghost" style={{ padding: "8px 10px" }}
+              onClick={() => set(filas.filter((_, j) => j !== i))}>×</button></td>
+          </tr>)}</tbody>
+      </table>
+      <button type="button" className="btn ghost" style={{ marginTop: 8 }}
+        onClick={() => set([...filas, { m: "", prog: "", desp: "", med: "" }])}>+ Agregar medición</button>
+    </div>;
+  }
+
+  if (c.tipo === "firma") return <FirmaCampo c={c} valor={valor} set={set} obligatorio={obligatorio} />;
+  if (c.tipo === "fotos") return <FotosCampo c={c} valor={valor} set={set} obligatorio={obligatorio} />;
+  return null;
+}
+
+function FirmaCampo({ c, valor, set, obligatorio }) {
+  const ref = useRef(null), dib = useRef(false), ult = useRef(null);
+  const preparar = useCallback(() => {
+    const cv = ref.current; if (!cv) return;
+    const dpr = window.devicePixelRatio || 1, r = cv.getBoundingClientRect();
+    if (cv.width === Math.round(r.width * dpr)) return;
+    cv.width = Math.round(r.width * dpr); cv.height = Math.round(r.height * dpr);
+    const ctx = cv.getContext("2d");
+    ctx.scale(dpr, dpr); ctx.lineWidth = 2.6; ctx.lineCap = "round"; ctx.lineJoin = "round"; ctx.strokeStyle = "#0B1116";
+    if (valor) { const img = new Image(); img.onload = () => ctx.drawImage(img, 0, 0, r.width, r.height); img.src = valor; }
+  }, [valor]);
+  useEffect(() => { preparar(); window.addEventListener("resize", preparar); return () => window.removeEventListener("resize", preparar); }, [preparar]);
+
+  const pos = e => { const r = ref.current.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; };
+  const abajo = e => { e.preventDefault(); ref.current.setPointerCapture(e.pointerId); dib.current = true; ult.current = pos(e); };
+  const mover = e => {
+    if (!dib.current) return;
+    const ctx = ref.current.getContext("2d"), p = pos(e);
+    ctx.beginPath(); ctx.moveTo(ult.current.x, ult.current.y); ctx.lineTo(p.x, p.y); ctx.stroke(); ult.current = p;
+  };
+  const arriba = () => { if (!dib.current) return; dib.current = false; set(ref.current.toDataURL("image/png")); };
+  const limpiar = () => { const cv = ref.current, ctx = cv.getContext("2d"); ctx.clearRect(0, 0, cv.width, cv.height); set(""); };
+
+  return <div className="f"><Etiqueta c={c} obligatorio={obligatorio} />
+    <div className="sigwrap">
+      <canvas ref={ref} onPointerDown={abajo} onPointerMove={mover} onPointerUp={arriba} onPointerLeave={arriba} />
+      {!valor && <div className="sighint">Firme aquí</div>}
+    </div>
+    <button type="button" className="btn ghost" style={{ marginTop: 8 }} onClick={limpiar}>Borrar firma</button>
+  </div>;
+}
+
+function FotosCampo({ c, valor, set, obligatorio }) {
+  const [cargando, setCargando] = useState(false);
+  const fotos = valor || [];
+  const agregar = async e => {
+    const files = Array.from(e.target.files || []); e.target.value = "";
+    if (!files.length) return;
+    setCargando(true);
+    const nuevas = [];
+    for (const f of files) { try { nuevas.push({ id: uid(), nombre: f.name, dataUrl: await comprimirImagen(f) }); } catch (err) {} }
+    set([...fotos, ...nuevas]); setCargando(false);
+  };
+  return <div className="f"><Etiqueta c={c} obligatorio={obligatorio} />
+    <label className="btn ghost block" style={{ cursor: "pointer" }}>
+      {cargando ? <span className="spin" /> : "Agregar fotos"}
+      <input type="file" accept="image/*" multiple onChange={agregar} style={{ display: "none" }} />
+    </label>
+    {!!fotos.length && <div className="thumbs">{fotos.map(f =>
+      <div className="thumb" key={f.id}><img src={f.dataUrl} alt="" />
+        <button type="button" onClick={() => set(fotos.filter(x => x.id !== f.id))}>×</button></div>)}</div>}
+  </div>;
+}
+
+/* ==========================================================
+   6. PANTALLAS
+   ========================================================== */
+function Identificacion({ onEntrar, usuarios, recargar, cargando }) {
+  const [n, setN] = useState("");
+  const [nip, setNip] = useState("");
+  const [err, setErr] = useState("");
+  const [validando, setValidando] = useState(false);
+
+  const entrar = async () => {
+    setValidando(true); setErr("");
+    const e = await onEntrar(n, nip);
+    if (e) { setErr(e); setNip(""); }
+    setValidando(false);
+  };
+
+  return <main>
+    <div className="center">
+      <div style={{ letterSpacing: ".2em", fontSize: 12, color: "var(--muted)", textTransform: "uppercase" }}>Ingenieros Asociados</div>
+      <h1 style={{ fontSize: 26, margin: 0, letterSpacing: "-.01em" }}>Orden de Trabajo</h1>
+      <p className="lead" style={{ maxWidth: 320 }}>Elija su usuario y escriba su NIP de 4 dígitos.</p>
+
+      <div style={{ width: "100%", maxWidth: 380 }}>
+        <select value={n} onChange={e => { setN(e.target.value); setErr(""); }}>
+          <option value="">Seleccione usuario</option>
+          {usuarios.map(u => <option key={u.nombre} value={u.nombre}>{u.nombre}</option>)}
+        </select>
+
+        <input type="password" inputMode="numeric" maxLength={4} value={nip} className="nip"
+          onChange={e => setNip(e.target.value.replace(/\D/g, ""))}
+          placeholder="• • • •" style={{ marginTop: 12 }} />
+
+        {err && <div className="note bad" style={{ marginTop: 10 }}>{err}</div>}
+
+        <button className="btn primary block" style={{ marginTop: 12 }}
+          disabled={!n || nip.length !== 4 || validando} onClick={entrar}>
+          {validando ? <span className="spin" /> : "Entrar"}</button>
+
+        {!usuarios.length && <button className="btn ghost block" style={{ marginTop: 10 }}
+          onClick={recargar} disabled={cargando}>
+          {cargando ? <span className="spin" /> : "Cargar lista de usuarios"}</button>}
+      </div>
+    </div>
+  </main>;
+}
+
+function Formulario({ borrador, guardar, enviar, cancelar, mapa, faltantes }) {
+  // Si el nombre del usuario no está entre las opciones del formulario, la orden
+  // será rechazada por Jotform: más vale avisarlo desde el primer paso.
+  const opsIng = (mapa.ingeniero && mapa.ingeniero.opciones) || [];
+  const [v, setV] = useState(borrador.valores);
+  const [sec, setSec] = useState(borrador.seccion || 0);
+  const [errs, setErrs] = useState([]);
+  const timer = useRef(null);
+
+  const set = (k, val) => setV(prev => ({ ...prev, [k]: val }));
+
+  useEffect(() => { // autoguardado
+    clearTimeout(timer.current);
+    timer.current = setTimeout(() => guardar({ ...borrador, valores: v, seccion: sec, actualizada: Date.now() }, true), 700);
+    return () => clearTimeout(timer.current);
+  }, [v, sec]);
+
+  useEffect(() => { window.scrollTo({ top: 0, behavior: "instant" }); }, [sec]);
+
+  const S = SECCIONES[sec], ultima = sec === SECCIONES.length - 1;
+  const sinNombre = !!opsIng.length && !!v.ingeniero && opsIng.indexOf(v.ingeniero) === -1;
+  const sinMapear = S.campos.filter(c => faltantes.some(f => f.k === c.k));
+
+  const intentarEnviar = () => {
+    const f = faltanRequeridos(v, mapa);
+    if (f.length) { setErrs(f); const i = SECCIONES.findIndex(s => s.campos.some(c => c.k === f[0].k)); setSec(i); return; }
+    setErrs([]); enviar({ ...borrador, valores: v, seccion: sec, actualizada: Date.now() });
+  };
+
+  return <main>
+    <div className="steps">{SECCIONES.map((s, i) => <b key={s.id} className={i < sec ? "done" : i === sec ? "now" : ""} />)}</div>
+    <h2>{S.titulo}</h2>
+    <p className="lead">Paso {sec + 1} de {SECCIONES.length} · se guarda solo mientras escribe</p>
+
+    {!!errs.length && <div className="note bad">Faltan campos obligatorios: {errs.map(e => e.et).join(", ")}.</div>}
+    {sinNombre && <div className="note bad">
+      Su usuario no coincide con ningún ingeniero de la lista del formulario, así que la orden
+      no se puede enviar a su nombre. Elija uno en el paso de firmas o pida a coordinación que
+      corrija su nombre en Gestionar usuarios.
+    </div>}
+    {!!sinMapear.length && <div className="note">Estos campos no se encontraron en el formulario de Jotform y no se enviarán: {sinMapear.map(c => c.et).join(", ")}. Revise la pestaña Ajustes.</div>}
+
+    <div className="card">
+      {S.campos.map(c => <Campo key={c.k} c={c} valor={v[c.k]} set={val => set(c.k, val)}
+        obligatorio={!!(mapa[c.k] && mapa[c.k].obligatorio)}
+        opciones={mapa[c.k] && mapa[c.k].opciones} />)}
+    </div>
+
+    <div className="actions">
+      {sec > 0 && <button className="btn" onClick={() => setSec(sec - 1)}>Atrás</button>}
+      {ultima
+        ? <button className="btn primary" onClick={intentarEnviar}>Enviar orden</button>
+        : <button className="btn primary" onClick={() => setSec(sec + 1)}>Siguiente</button>}
+    </div>
+    {/* Salir está disponible en cualquier paso: lo capturado ya quedó guardado */}
+    <button className="btn ghost block" style={{ marginTop: 10 }}
+      onClick={() => { guardar({ ...borrador, valores: v, seccion: sec, actualizada: Date.now() }); cancelar(); }}>
+      Salir y continuar después
+    </button>
+  </main>;
+}
+
+function ListaBorradores({ borradores, abrir, borrar, nuevo, mapa, enviar, cola, enviando, reintentar,
+  devolver, deOtros, verTodos, alternarTodos }) {
+  return <main>
+    <h2>Borradores</h2>
+    <p className="lead">Órdenes sin terminar guardadas en este teléfono. Nada se pierde si cierra la app o se queda sin señal.</p>
+    <button className="btn primary block" style={{ marginBottom: 14 }} onClick={nuevo}>Nueva orden de trabajo</button>
+
+    {/* Un borrador capturado con otro usuario nunca debe parecer perdido */}
+    {!!deOtros && <div className="note">
+      Hay {deOtros} borrador(es) capturado(s) con otro usuario en este dispositivo.
+      <button className="btn ghost block" style={{ marginTop: 8 }} onClick={alternarTodos}>
+        {verTodos ? "Ver solo los míos" : "Mostrarlos"}</button>
+    </div>}
+
+    {/* Las órdenes en cola solo esperan señal: el resto vuelve solo a borradores */}
+    {!!cola.length && <>
+      <h2 style={{ marginTop: 4 }}>Esperando señal</h2>
+      <p className="lead">Se envían solas al reconectar.</p>
+      <button className="btn block" style={{ marginBottom: 10 }} disabled={enviando} onClick={reintentar}>
+        {enviando ? <><span className="spin" /> Enviando…</> : "Intentar ahora"}</button>
+      {cola.map(o => <div className="item" key={o.id}>
+        <div className="body">
+          <div className="t">{o.valores.equipo || "Equipo"}</div>
+          <div className="s">{o.folio ? o.folio + " · " : ""}{o.valores.unidad || "—"}<br />
+            {o.error ? <span style={{ color: "var(--alert)" }}>{o.error}</span> : "En espera de conexión"}</div>
+        </div>
+        <button className="btn ghost" style={{ padding: "6px 10px", fontSize: 12 }} onClick={() => devolver(o.id)}>
+          A borradores</button>
+      </div>)}
+      <h2 style={{ marginTop: 18 }}>Sin terminar</h2>
+    </>}
+    {!borradores.length
+      ? <div className="empty">No hay borradores.<br />Empiece una orden y quedará aquí en cuanto escriba el primer dato.</div>
+      : borradores.map(b => {
+        const v = b.valores, pend = faltanRequeridos(v, mapa).length;
+        return <div className="item" key={b.id} style={{ flexDirection: "column", alignItems: "stretch" }}>
+          <div style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
+            <div className="body" onClick={() => abrir(b)} style={{ cursor: "pointer" }}>
+              <div className="t">{v.equipo || "Equipo sin capturar"}</div>
+              <div className="s">{v.unidad || "Unidad sin capturar"} · {v.inventario || "s/inv"}<br />
+              {b.folio ? b.folio + " · " : ""}Editado {fmtFecha(b.actualizada)}</div>
+            {b.errorEnvio && <div className="s" style={{ color: "var(--alert)", marginTop: 5 }}>
+              No se envió: {b.errorEnvio}</div>}
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 6, alignItems: "flex-end" }}>
+              <span className={"tag " + (pend ? "pend" : "ok")}>{pend ? pend + " pend." : "lista"}</span>
+              <button className="btn danger ghost" style={{ padding: "6px 10px", fontSize: 12 }} onClick={() => borrar(b.id)}>Eliminar</button>
+            </div>
+          </div>
+          {/* Una orden completa se puede mandar sin volver a abrirla paso por paso */}
+          {!pend && <button className="btn primary block" style={{ marginTop: 10 }}
+            onClick={() => enviar(b)}>{b.errorEnvio ? "Reintentar el envío" : "Enviar esta orden"}</button>}
+        </div>;
+      })}
+  </main>;
+}
+
+function MisEnvios({ ingeniero, enviados, cargar, cargando, error }) {
+  const [abierta, setAbierta] = useState(null);
+  const [detalle, setDetalle] = useState(null);
+  const [cargandoDetalle, setCargandoDetalle] = useState(false);
+  const [errDetalle, setErrDetalle] = useState("");
+  const [anio, setAnio] = useState("");
+  const [mes, setMes] = useState("");
+  const [hospital, setHospital] = useState("");
+  const [texto, setTexto] = useState("");
+  useEffect(() => { cargar(); }, []);
+
+  const MESES = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
+    "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"];
+
+  // Las opciones salen de los envíos reales, así nunca se ofrece un filtro vacío.
+  const { anios, meses, hospitales } = useMemo(() => {
+    const a = new Set(), m = new Set(), h = new Set();
+    enviados.forEach(s => {
+      const d = new Date(s.created_at);
+      a.add(String(d.getFullYear()));
+      if (!anio || String(d.getFullYear()) === anio) m.add(String(d.getMonth()));
+      if (s.unidad) h.add(s.unidad.trim());
+    });
+    return {
+      anios: [...a].sort((x, y) => y - x),
+      meses: [...m].sort((x, y) => x - y),
+      hospitales: [...h].sort((x, y) => x.localeCompare(y))
+    };
+  }, [enviados, anio]);
+
+  const lista = useMemo(() => enviados.filter(s => {
+    const d = new Date(s.created_at);
+    if (anio && String(d.getFullYear()) !== anio) return false;
+    if (mes && String(d.getMonth()) !== mes) return false;
+    if (hospital && (s.unidad || "").trim() !== hospital) return false;
+    if (texto) {
+      const t = texto.toLowerCase();
+      const campos = [s.equipo, s.unidad, s.inventario, s.folio].join(" ").toLowerCase();
+      if (campos.indexOf(t) === -1) return false;
+    }
+    return true;
+  }), [enviados, anio, mes, hospital, texto]);
+
+  const limpiar = () => { setAnio(""); setMes(""); setHospital(""); setTexto(""); };
+
+  const abrir = async s => {
+    setAbierta(s); setDetalle(null); setErrDetalle(""); setCargandoDetalle(true);
+    try {
+      const d = await Api.get({ action: "detalle", fila: s.fila });
+      setDetalle(d.respuestas || []);
+    } catch (e) { setErrDetalle("No se pudo abrir el detalle: " + e.message); }
+    setCargandoDetalle(false);
+  };
+  const filtrando = anio || mes || hospital || texto;
+
+  if (abierta) return <main>
+    <button className="btn ghost" onClick={() => setAbierta(null)} style={{ marginBottom: 12 }}>← Volver</button>
+    <h2>{abierta.folio || "Envío " + abierta.id}</h2>
+    <p className="lead">
+      {abierta.equipo || "Equipo"} · {abierta.unidad || "—"}<br />
+      {abierta.created_at ? new Date(abierta.created_at).toLocaleString("es-MX") : ""}
+    </p>
+    {errDetalle && <div className="note bad">{errDetalle}</div>}
+    {cargandoDetalle
+      ? <div className="empty"><span className="spin" /> Abriendo la orden…</div>
+      : detalle && <div className="card"><div className="kv">
+          {detalle.map((r, i) => <div key={i}><b>{r.pregunta}:</b> {r.valor}</div>)}
+        </div></div>}
+  </main>;
+
+  return <main>
+    <h2>Mis envíos</h2>
+    <p className="lead">Órdenes registradas en Jotform a nombre de {ingeniero.split(" ")[0]}.</p>
+
+    <div className="card tight">
+      <div className="row">
+        <select value={anio} onChange={e => { setAnio(e.target.value); setMes(""); }}>
+          <option value="">Todos los años</option>
+          {anios.map(a => <option key={a} value={a}>{a}</option>)}
+        </select>
+        <select value={mes} onChange={e => setMes(e.target.value)}>
+          <option value="">Todos los meses</option>
+          {meses.map(m => <option key={m} value={m}>{MESES[Number(m)]}</option>)}
+        </select>
+      </div>
+      <select value={hospital} onChange={e => setHospital(e.target.value)} style={{ marginTop: 10 }}>
+        <option value="">Todas las unidades médicas</option>
+        {hospitales.map(h => <option key={h} value={h}>{h}</option>)}
+      </select>
+      <input type="text" placeholder="Buscar equipo, inventario o folio" value={texto}
+        onChange={e => setTexto(e.target.value)} style={{ marginTop: 10 }} />
+      <div className="actions" style={{ marginTop: 10 }}>
+        <button className="btn ghost" onClick={cargar} disabled={cargando}>
+          {cargando ? <><span className="spin" /> Consultando…</> : "Actualizar"}</button>
+        {filtrando && <button className="btn ghost" onClick={limpiar}>Quitar filtros</button>}
+      </div>
+    </div>
+
+    {error && <div className="note bad">{error}</div>}
+
+    <p className="lead" style={{ marginBottom: 10 }}>
+      {cargando ? "Consultando el historial…"
+        : lista.length === enviados.length
+          ? `${enviados.length} orden${enviados.length === 1 ? "" : "es"} en total`
+          : `${lista.length} de ${enviados.length} órdenes`}
+    </p>
+
+    {!cargando && !enviados.length && !error &&
+      <div className="empty">Todavía no hay envíos a su nombre, o no hay conexión para consultarlos.</div>}
+    {!cargando && enviados.length > 0 && !lista.length &&
+      <div className="empty">Ninguna orden coincide con los filtros.</div>}
+
+    {lista.map(s => <div className="item" key={s.fila} onClick={() => abrir(s)} style={{ cursor: "pointer" }}>
+      <div className="body">
+        <div className="t">{s.equipo || "Equipo"}</div>
+        <div className="s">{s.folio ? s.folio + " · " : ""}{s.unidad || "—"} · {s.inventario || "s/inv"}<br />
+          {s.created_at ? new Date(s.created_at).toLocaleString("es-MX") : "sin fecha"}</div>
+      </div>
+      <span className="tag ok">enviada</span>
+    </div>)}
+  </main>;
+}
+
+function Avisos({ ingeniero, avisos, cargar, cargando, error, esCoordinador, ingenieros, guardar }) {
+  const [editando, setEditando] = useState(null);
+  const [guardando, setGuardando] = useState(false);
+  const [aviso, setAviso] = useState({ destinatario: "TODOS", tipo: "informativo", titulo: "", mensaje: "" });
+  useEffect(() => { cargar(); }, []);
+
+  const abrirNuevo = () => {
+    setAviso({ destinatario: "TODOS", tipo: "informativo", titulo: "", mensaje: "" });
+    setEditando("nuevo");
+  };
+  const abrirEdicion = a => {
+    setAviso({ fila: a.fila, destinatario: a.destinatario, tipo: a.tipo, titulo: a.titulo, mensaje: a.mensaje });
+    setEditando(a.id);
+  };
+  const publicar = async () => {
+    setGuardando(true);
+    const ok = await guardar({ ...aviso, activo: true });
+    setGuardando(false);
+    if (ok) setEditando(null);
+  };
+  const alternar = async a => { await guardar({ fila: a.fila, activo: !a.activo }); };
+
+  if (editando) return <main>
+    <button className="btn ghost" onClick={() => setEditando(null)} style={{ marginBottom: 12 }}>← Volver</button>
+    <h2>{editando === "nuevo" ? "Nuevo aviso" : "Editar aviso"}</h2>
+    <p className="lead">Aparece en la pestaña Avisos del ingeniero asignado.</p>
+    <div className="card">
+      <label className="f"><span className="lb">Para <em>*</em></span>
+        <select value={aviso.destinatario} onChange={e => setAviso({ ...aviso, destinatario: e.target.value })}>
+          <option value="TODOS">Todo el equipo</option>
+          {ingenieros.map(i => <option key={i} value={i}>{i}</option>)}
+        </select></label>
+      <label className="f"><span className="lb">Tipo</span>
+        <select value={aviso.tipo} onChange={e => setAviso({ ...aviso, tipo: e.target.value })}>
+          <option value="informativo">Informativo</option>
+          <option value="mantenimiento">Mantenimiento asignado</option>
+          <option value="urgente">Urgente</option>
+        </select></label>
+      <label className="f"><span className="lb">Título <em>*</em></span>
+        <input type="text" value={aviso.titulo} onChange={e => setAviso({ ...aviso, titulo: e.target.value })}
+          placeholder="Mantenimientos de la semana" /></label>
+      <label className="f"><span className="lb">Mensaje <em>*</em></span>
+        <textarea value={aviso.mensaje} onChange={e => setAviso({ ...aviso, mensaje: e.target.value })}
+          style={{ minHeight: 150 }} placeholder="Un equipo por renglón, con su ubicación y fecha programada" /></label>
+      <button className="btn primary block" disabled={!aviso.titulo.trim() || !aviso.mensaje.trim() || guardando}
+        onClick={publicar}>{guardando ? <span className="spin" /> : "Publicar aviso"}</button>
+    </div>
+  </main>;
+
+  return <main>
+    <h2>Avisos</h2>
+    <p className="lead">{esCoordinador
+      ? "Comunicados publicados para el equipo."
+      : "Comunicados y asignaciones para " + ingeniero.split(" ")[0] + "."}</p>
+
+    {esCoordinador && <button className="btn primary block" style={{ marginBottom: 10 }} onClick={abrirNuevo}>
+      Nuevo aviso</button>}
+    <button className="btn ghost block" style={{ marginBottom: 14 }} onClick={cargar} disabled={cargando}>
+      {cargando ? <><span className="spin" /> Consultando…</> : "Actualizar"}</button>
+
+    {error && <div className="note bad">{error}</div>}
+    {!cargando && !avisos.length && !error && <div className="empty">No hay avisos por ahora.</div>}
+
+    {avisos.map(a => <div className={"aviso " + (a.tipo || "informativo")} key={a.id}
+      style={a.activo === false ? { opacity: .5 } : null}>
+      <h3>{a.titulo || "Aviso"}</h3>
+      {a.mensaje && <p>{a.mensaje}</p>}
+      <div className="meta">
+        {a.fecha ? new Date(a.fecha).toLocaleDateString("es-MX", { day: "2-digit", month: "long", year: "numeric" }) : ""}
+        {esCoordinador
+          ? " · para " + (a.paraTodos ? "todo el equipo" : a.destinatario) + (a.activo === false ? " · oculto" : "")
+          : (a.paraTodos ? " · para todo el equipo" : " · personal")}
+      </div>
+      {esCoordinador && <div className="actions" style={{ marginTop: 10 }}>
+        <button className="btn ghost" style={{ padding: "8px 12px", fontSize: 13 }} onClick={() => abrirEdicion(a)}>Editar</button>
+        <button className="btn ghost" style={{ padding: "8px 12px", fontSize: 13 }} onClick={() => alternar(a)}>
+          {a.activo === false ? "Mostrar" : "Ocultar"}</button>
+      </div>}
+    </div>)}
+  </main>;
+}
+
+const COLUMNAS = [
+  { k: "asignada", n: "Asignada" },
+  { k: "en_proceso", n: "En proceso" },
+  { k: "terminada", n: "Terminada" },
+  { k: "con_observacion", n: "Con observación" }
+];
+const PRIORIDADES = [
+  { k: "alta", n: "Alta" },
+  { k: "media", n: "Media" },
+  { k: "baja", n: "Baja" }
+];
+const MESES_N = ["enero", "febrero", "marzo", "abril", "mayo", "junio",
+  "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"];
+
+function Tablero({ tareas, cargar, cargando, error, esAdmin, esVisualizador, yo, ingenieros, guardar, mover, eliminar,
+  enviarReporte, enviandoRep, enviarUbicaciones, enviandoUbic }) {
+  const [filtros, setFiltros] = useState({ desde: "", hasta: "", ingeniero: "", estado: "", prioridad: "" });
+  const [correoDestino, setCorreoDestino] = useState("");
+  const [correoUbic, setCorreoUbic] = useState("");
+  const [vista, setVista] = useState(esVisualizador ? "ingeniero" : "tablero");
+  // En el perfil de consulta la tarjeta se identifica por dónde está el trabajo
+  const rotulo = x => esVisualizador ? (x.ubicacion || "Sin ubicación") : x.titulo;
+  const [abierta, setAbierta] = useState(null);
+  const [editando, setEditando] = useState(null);
+  const [guardando, setGuardando] = useState(false);
+  const [observando, setObservando] = useState(false);
+  const [comentario, setComentario] = useState("");
+  const [mes, setMes] = useState(() => { const d = new Date(); return { a: d.getFullYear(), m: d.getMonth() }; });
+  const [dia, setDia] = useState("");
+  const [t, setT] = useState({});
+  useEffect(() => { cargar(); }, []);
+
+  const vacia = { titulo: "", inicio: hoyISO(), fin: hoyISO(), ubicacion: "",
+    observaciones: "", prioridad: "baja", asignado: "", estado: "asignada" };
+
+  const aplicar = async () => {
+    setGuardando(true);
+    const ok = await guardar(t);
+    setGuardando(false);
+    if (ok) { setEditando(null); setAbierta(null); }
+  };
+
+  // ---- Alta y edición ----
+  if (editando) return <main>
+    <button className="btn ghost" onClick={() => setEditando(null)} style={{ marginBottom: 12 }}>← Volver</button>
+    <h2>{t.fila ? "Editar tarea" : "Nueva tarea"}</h2>
+    <div className="card">
+      <label className="f"><span className="lb">Tarea <em>*</em></span>
+        <input type="text" value={t.titulo} onChange={e => setT({ ...t, titulo: e.target.value })}
+          placeholder="Mantenimiento preventivo, monitor PAT396" /></label>
+      <div className="row">
+        <label className="f"><span className="lb">Inicio</span>
+          <input type="date" value={t.inicio || ""} onChange={e => setT({ ...t, inicio: e.target.value })} /></label>
+        <label className="f"><span className="lb">Fin</span>
+          <input type="date" value={t.fin || ""} onChange={e => setT({ ...t, fin: e.target.value })} /></label>
+      </div>
+      <label className="f"><span className="lb">Ubicación</span>
+        <input type="text" value={t.ubicacion || ""} onChange={e => setT({ ...t, ubicacion: e.target.value })}
+          placeholder="Hospital, área" /></label>
+      <div className="f"><span className="lb">Prioridad</span>
+        <div className="chips">{PRIORIDADES.map(p =>
+          <button key={p.k} type="button" className={"chip" + (p.k === "alta" ? " neg" : "")}
+            aria-pressed={t.prioridad === p.k} onClick={() => setT({ ...t, prioridad: p.k })}>{p.n}</button>)}
+        </div></div>
+      <label className="f"><span className="lb">Asignar a</span>
+        <select value={t.asignado || ""} onChange={e => setT({ ...t, asignado: e.target.value })}>
+          <option value="">Sin asignar</option>
+          {ingenieros.map(i => <option key={i} value={i}>{i}</option>)}
+        </select></label>
+      <label className="f"><span className="lb">Observaciones</span>
+        <textarea value={t.observaciones || ""} onChange={e => setT({ ...t, observaciones: e.target.value })} /></label>
+      <button className="btn primary block" disabled={!(t.titulo || "").trim() || guardando} onClick={aplicar}>
+        {guardando ? <span className="spin" /> : "Guardar tarea"}</button>
+    </div>
+  </main>;
+
+  // ---- Ficha ----
+  if (abierta) {
+    const col = COLUMNAS.find(c => c.k === abierta.estado);
+    const puedeMover = !esVisualizador && (esAdmin || norm(abierta.asignado) === norm(yo));
+    return <main>
+      <button className="btn ghost" onClick={() => setAbierta(null)} style={{ marginBottom: 12 }}>← Tablero</button>
+      <h2>{rotulo(abierta)}</h2>
+      <p className="lead">{(PRIORIDADES.find(p => p.k === abierta.prioridad) || {}).n} · {col ? col.n : abierta.estado}</p>
+      <div className="card"><div className="kv">
+        <div><b>Inicio:</b> {abierta.inicio || "—"}</div>
+        <div><b>Fin:</b> {abierta.fin || "—"}</div>
+        <div><b>Ubicación:</b> {abierta.ubicacion || "—"}</div>
+        <div><b>Asignada a:</b> {abierta.asignado || "sin asignar"}</div>
+        {esAdmin && <div><b>Asignó:</b> {abierta.asignadoPor || "—"}</div>}
+        {abierta.observaciones && <div style={{ marginTop: 8 }}><b>Observaciones:</b><br />{abierta.observaciones}</div>}
+      </div></div>
+
+      {abierta.bitacora && <>
+        <h2 style={{ marginTop: 18 }}>Bitácora</h2>
+        <div className="card"><div className="kv" style={{ whiteSpace: "pre-wrap" }}>{abierta.bitacora}</div></div>
+      </>}
+
+      {puedeMover && <>
+        <h2 style={{ marginTop: 18 }}>Mover a</h2>
+        <div className="chips" style={{ marginBottom: 14 }}>
+          {COLUMNAS.map(c => <button key={c.k} type="button"
+            className={"chip" + (c.k === "con_observacion" ? " neg" : "")}
+            aria-pressed={abierta.estado === c.k}
+            onClick={() => {
+              // Con observación exige explicar por qué la tarea no se completó
+              if (c.k === "con_observacion") { setComentario(""); setObservando(true); return; }
+              mover(abierta, c.k); setAbierta({ ...abierta, estado: c.k });
+            }}>{c.n}</button>)}
+        </div>
+
+        {observando && <div className="card">
+          <label className="f"><span className="lb">Observación <em>*</em></span>
+            <textarea value={comentario} onChange={e => setComentario(e.target.value)} autoFocus
+              placeholder="Por qué no se pudo completar: falta de refacción, equipo en uso, acceso restringido…" /></label>
+          <div className="actions">
+            <button className="btn ghost" onClick={() => setObservando(false)}>Cancelar</button>
+            <button className="btn primary" disabled={!comentario.trim()}
+              onClick={() => {
+                mover(abierta, "con_observacion", comentario.trim());
+                setAbierta({ ...abierta, estado: "con_observacion" });
+                setObservando(false); setComentario("");
+              }}>Guardar observación</button>
+          </div>
+        </div>}
+      </>}
+      {!puedeMover && <div className="note">
+        {esVisualizador ? "Su perfil es de solo consulta." : "Esta tarea no está asignada a usted."}</div>}
+
+      {esAdmin && <div className="actions">
+        <button className="btn" onClick={() => { setT({ ...abierta, asignadoPrevio: abierta.asignado }); setEditando(abierta.id); }}>Editar</button>
+        <button className="btn danger" onClick={() => { eliminar(abierta); setAbierta(null); }}>Eliminar</button>
+      </div>}
+    </main>;
+  }
+
+  // Una tarea ocupa todos los días entre su inicio y su fin, no solo los extremos
+  const enRango = (x, iso) => {
+    const ini = x.inicio || x.fin, fin = x.fin || x.inicio;
+    if (!ini) return false;
+    return iso >= ini && iso <= fin;
+  };
+
+  // ---- Calendario ----
+  if (vista === "calendario") {
+    const primero = new Date(mes.a, mes.m, 1);
+    const dias = new Date(mes.a, mes.m + 1, 0).getDate();
+    const desfase = (primero.getDay() + 6) % 7;      // la semana empieza en lunes
+    const hoy = hoyISO();
+    const celdas = [];
+    for (let i = 0; i < desfase; i++) celdas.push(null);
+    // Se ordenan igual en todos los días para que cada tarea conserve su renglón
+    const ordenadas = [...tareas].sort((a, b) =>
+      (a.inicio || "").localeCompare(b.inicio || "") || String(a.id).localeCompare(String(b.id)));
+    for (let d = 1; d <= dias; d++) {
+      const iso = mes.a + "-" + String(mes.m + 1).padStart(2, "0") + "-" + String(d).padStart(2, "0");
+      celdas.push({ d, iso, tareas: ordenadas.filter(x => enRango(x, iso)) });
+    }
+    const delDia = dia ? ordenadas.filter(x => enRango(x, dia)) : [];
+
+    return <main>
+      <h2>Tablero</h2>
+      <div className="vistas">
+        <button aria-pressed={false}
+          onClick={() => setVista(esVisualizador ? "ingeniero" : "tablero")}>
+          {esVisualizador ? "Por ingeniero" : "Tablero"}</button>
+        <button aria-pressed={true}>Calendario</button>
+        {esAdmin && <button aria-pressed={false} onClick={() => setVista("reporte")}>Reporte</button>}
+      </div>
+      <div className="mescab">
+        <button className="btn ghost" style={{ padding: "8px 12px" }}
+          onClick={() => setMes(m => m.m === 0 ? { a: m.a - 1, m: 11 } : { a: m.a, m: m.m - 1 })}>‹</button>
+        <b>{MESES_N[mes.m]} {mes.a}</b>
+        <button className="btn ghost" style={{ padding: "8px 12px" }}
+          onClick={() => setMes(m => m.m === 11 ? { a: m.a + 1, m: 0 } : { a: m.a, m: m.m + 1 })}>›</button>
+      </div>
+      <div className="cal">
+        {["L", "M", "M", "J", "V", "S", "D"].map((d, i) => <div className="dn" key={i}>{d}</div>)}
+        {celdas.map((c, i) => c
+          ? <div key={i} className={"dia" + (c.iso === hoy ? " hoy" : "")} onClick={() => setDia(c.iso === dia ? "" : c.iso)}>
+              <span className="n">{c.d}</span>
+              {c.tareas.slice(0, 3).map(x => {
+                const ini = x.inicio || x.fin, fin = x.fin || x.inicio;
+                return <span key={x.id} className={"p " + x.prioridad +
+                  (c.iso === ini ? " ini" : "") + (c.iso === fin ? " fin" : "")} />;
+              })}
+              {c.tareas.length > 3 && <span className="mas">+{c.tareas.length - 3}</span>}
+            </div>
+          : <div key={i} className="dia vacio" />)}
+      </div>
+
+      {dia && <>
+        <h2 style={{ marginTop: 18 }}>{dia}</h2>
+        {!delDia.length && <div className="empty">Sin tareas ese día.</div>}
+        {delDia.map(x => <div className={"tarea " + x.prioridad} key={x.id} onClick={() => setAbierta(x)}>
+          <div className="t">{rotulo(x)}</div>
+          <div className="d">
+            {x.ubicacion || "—"}{x.asignado ? " · " + x.asignado.split(" ")[0] : ""}<br />
+            {x.inicio || "?"}{x.fin && x.fin !== x.inicio ? " → " + x.fin : ""}
+            {(COLUMNAS.find(c => c.k === x.estado) || {}).n
+              ? " · " + (COLUMNAS.find(c => c.k === x.estado) || {}).n : ""}
+          </div>
+        </div>)}
+      </>}
+    </main>;
+  }
+
+  // ---- Agrupado por ingeniero o por ubicación (perfil de consulta) ----
+  if (vista === "ingeniero") {
+    const grupos = {};
+    tareas.forEach(x => {
+      const k = (x.asignado || "").trim() || "Sin asignar";
+      (grupos[k] = grupos[k] || []).push(x);
+    });
+    const nombres = Object.keys(grupos).sort((a, b) => a.localeCompare(b));
+
+    return <main>
+      <h2>Tablero</h2>
+      <p className="lead">Dónde está asignado cada ingeniero.</p>
+      <div className="vistas">
+        <button aria-pressed={true}>Por ingeniero</button>
+        <button aria-pressed={false} onClick={() => setVista("calendario")}>Calendario</button>
+      </div>
+      <button className="btn ghost block" style={{ marginBottom: 14 }} onClick={cargar} disabled={cargando}>
+        {cargando ? <><span className="spin" /> Consultando…</> : "Actualizar"}</button>
+
+      {error && <div className="note bad">{error}</div>}
+      {!cargando && !tareas.length && !error && <div className="empty">No hay actividades en el tablero.</div>}
+
+      {nombres.map(n => <div key={n} style={{ marginBottom: 18 }}>
+        <h3 style={{ fontSize: 12, letterSpacing: ".1em", textTransform: "uppercase", color: "var(--amber)",
+          margin: "0 0 8px", display: "flex", justifyContent: "space-between" }}>
+          <span>{n}</span><span style={{ color: "var(--muted)" }}>{grupos[n].length}</span></h3>
+        {grupos[n].map(x => <div className={"tarea " + x.prioridad} key={x.id} onClick={() => setAbierta(x)}>
+          <div className="t">{rotulo(x)}</div>
+          <div className="d">
+            {x.inicio || "sin fecha"}{x.fin && x.fin !== x.inicio ? " → " + x.fin : ""}
+            {" · " + ((COLUMNAS.find(c => c.k === x.estado) || {}).n || x.estado)}
+          </div>
+        </div>)}
+      </div>)}
+    </main>;
+  }
+
+  // ---- Reporte ----
+  if (vista === "reporte") {
+    const f = filtros;
+    const lista = tareas.filter(x => {
+      if (f.desde && (x.fin || x.inicio) && (x.fin || x.inicio) < f.desde) return false;
+      if (f.hasta && (x.inicio || x.fin) > f.hasta) return false;
+      if (f.ingeniero && norm(x.asignado) !== norm(f.ingeniero)) return false;
+      if (f.estado && x.estado !== f.estado) return false;
+      if (f.prioridad && x.prioridad !== f.prioridad) return false;
+      return true;
+    });
+    const contar = campo => {
+      const m = {};
+      lista.forEach(x => { const k = x[campo] || "Sin asignar"; m[k] = (m[k] || 0) + 1; });
+      return Object.entries(m).sort((a, b) => b[1] - a[1]);
+    };
+
+    return <main>
+      <h2>Reporte del tablero</h2>
+      <div className="vistas">
+        <button aria-pressed={false} onClick={() => setVista("tablero")}>Tablero</button>
+        <button aria-pressed={false} onClick={() => setVista("calendario")}>Calendario</button>
+        <button aria-pressed={true}>Reporte</button>
+      </div>
+
+      <div className="card tight">
+        <div className="row">
+          <label className="f" style={{ marginBottom: 10 }}><span className="lb">Desde</span>
+            <input type="date" value={f.desde} onChange={e => setFiltros({ ...f, desde: e.target.value })} /></label>
+          <label className="f" style={{ marginBottom: 10 }}><span className="lb">Hasta</span>
+            <input type="date" value={f.hasta} onChange={e => setFiltros({ ...f, hasta: e.target.value })} /></label>
+        </div>
+        <select value={f.ingeniero} onChange={e => setFiltros({ ...f, ingeniero: e.target.value })}>
+          <option value="">Todos los ingenieros</option>
+          {ingenieros.map(i => <option key={i} value={i}>{i}</option>)}
+        </select>
+        <div className="row" style={{ marginTop: 10 }}>
+          <select value={f.estado} onChange={e => setFiltros({ ...f, estado: e.target.value })}>
+            <option value="">Todos los estados</option>
+            {COLUMNAS.map(c => <option key={c.k} value={c.k}>{c.n}</option>)}
+          </select>
+          <select value={f.prioridad} onChange={e => setFiltros({ ...f, prioridad: e.target.value })}>
+            <option value="">Toda prioridad</option>
+            {PRIORIDADES.map(p => <option key={p.k} value={p.k}>{p.n}</option>)}
+          </select>
+        </div>
+      </div>
+
+      <p className="lead">{lista.length} actividad(es) con estos filtros.</p>
+
+      <div className="card">
+        <h3 style={{ fontSize: 11, letterSpacing: ".12em", textTransform: "uppercase", color: "var(--amber)", margin: "0 0 8px" }}>Por estado</h3>
+        <div className="kv">{contar("estado").map(([k, n]) =>
+          <div key={k}><b>{(COLUMNAS.find(c => c.k === k) || {}).n || k}:</b> {n}</div>)}</div>
+        <h3 style={{ fontSize: 11, letterSpacing: ".12em", textTransform: "uppercase", color: "var(--amber)", margin: "16px 0 8px" }}>Por prioridad</h3>
+        <div className="kv">{contar("prioridad").map(([k, n]) =>
+          <div key={k}><b>{(PRIORIDADES.find(p => p.k === k) || {}).n || k}:</b> {n}</div>)}</div>
+        <h3 style={{ fontSize: 11, letterSpacing: ".12em", textTransform: "uppercase", color: "var(--amber)", margin: "16px 0 8px" }}>Por ingeniero</h3>
+        <div className="kv">{contar("asignado").map(([k, n]) => <div key={k}><b>{k}:</b> {n}</div>)}</div>
+      </div>
+
+      <label className="f"><span className="lb">Enviar a (opcional)</span>
+        <input type="email" value={correoDestino} onChange={e => setCorreoDestino(e.target.value)}
+          placeholder="Deje vacío para usar el correo de su usuario" /></label>
+
+      <button className="btn primary block" disabled={!lista.length || enviandoRep}
+        onClick={() => enviarReporte({ ...f, correo: correoDestino.trim() })}>
+        {enviandoRep ? <><span className="spin" /> Generando…</> : "Enviar reporte completo en PDF"}</button>
+      <p className="lead" style={{ marginTop: 8 }}>Incluye totales, el detalle de cada actividad y su bitácora de observaciones.</p>
+
+      {/* Reporte de ubicaciones: solo quién, dónde y por cuánto tiempo */}
+      <div className="card" style={{ marginTop: 6 }}>
+        <h3 style={{ fontSize: 11, letterSpacing: ".12em", textTransform: "uppercase", color: "var(--amber)", margin: "0 0 8px" }}>
+          Reporte de ubicaciones</h3>
+        <p className="lead" style={{ marginBottom: 12 }}>
+          Dónde está asignado cada ingeniero y por cuántos días, en el periodo de arriba. Sin prioridades ni estados.</p>
+        <label className="f"><span className="lb">Enviar a <em>*</em></span>
+          <input type="email" value={correoUbic} onChange={e => setCorreoUbic(e.target.value)}
+            placeholder="correo@ejemplo.com" /></label>
+        <button className="btn block" disabled={!correoUbic.trim() || enviandoUbic}
+          onClick={() => enviarUbicaciones({ desde: f.desde, hasta: f.hasta, correo: correoUbic.trim() })}>
+          {enviandoUbic ? <><span className="spin" /> Generando…</> : "Enviar reporte de ubicaciones"}</button>
+      </div>
+
+      {lista.map(x => <div className={"tarea " + x.prioridad} key={x.id} onClick={() => setAbierta(x)} style={{ marginTop: 8 }}>
+        <div className="t">{x.titulo}</div>
+        <div className="d">{x.inicio || "sin fecha"}{x.fin && x.fin !== x.inicio ? " → " + x.fin : ""}<br />
+          {x.asignado || "sin asignar"} · {(COLUMNAS.find(c => c.k === x.estado) || {}).n}</div>
+      </div>)}
+    </main>;
+  }
+
+  // ---- Tablero ----
+  return <main>
+    <h2>Tablero</h2>
+    <p className="lead">{esAdmin ? "Todas las actividades del equipo." : "Actividades asignadas a usted."}</p>
+    <div className="vistas">
+      <button aria-pressed={true}>Tablero</button>
+      <button aria-pressed={false} onClick={() => setVista("calendario")}>Calendario</button>
+      {esAdmin && <button aria-pressed={false} onClick={() => setVista("reporte")}>Reporte</button>}
+    </div>
+
+    {esAdmin && <button className="btn primary block" style={{ marginBottom: 10 }}
+      onClick={() => { setT({ ...vacia }); setEditando("nuevo"); }}>Nueva tarea</button>}
+    <button className="btn ghost block" style={{ marginBottom: 14 }} onClick={cargar} disabled={cargando}>
+      {cargando ? <><span className="spin" /> Consultando…</> : "Actualizar"}</button>
+
+    {error && <div className="note bad">{error}</div>}
+    {!cargando && !tareas.length && !error && <div className="empty">No hay actividades en el tablero.</div>}
+
+    <div className="kanban">
+      {COLUMNAS.map(c => {
+        const dela = tareas.filter(x => x.estado === c.k);
+        return <div className="kcol" key={c.k}>
+          <h3>{c.n}<b>{dela.length}</b></h3>
+          {!dela.length && <div style={{ fontSize: 12, color: "var(--muted)", padding: "6px 2px" }}>Vacía</div>}
+          {dela.map(x => <div className={"tarea " + x.prioridad} key={x.id} onClick={() => setAbierta(x)}>
+            <div className="t">{x.titulo}</div>
+            <div className="d">
+              {x.inicio || "sin fecha"}{x.fin && x.fin !== x.inicio ? " → " + x.fin : ""}<br />
+              {x.ubicacion || "sin ubicación"}
+              {esAdmin && x.asignado ? <><br />{x.asignado}</> : null}
+            </div>
+          </div>)}
+        </div>;
+      })}
+    </div>
+  </main>;
+}
+
+function Usuarios({ usuarios, cargar, cargando, error, guardar, ingenieros, yo }) {
+  const [editando, setEditando] = useState(null);
+  const [guardando, setGuardando] = useState(false);
+  const [u, setU] = useState({ nombre: "", nip: "", rol: "operador", activo: true, correo: "" });
+  useEffect(() => { cargar(); }, []);
+
+  const nuevo = () => { setU({ nombre: "", nip: "", rol: "operador", activo: true, correo: "" }); setEditando("nuevo"); };
+  const editar = x => { setU({ fila: x.fila, nombre: x.nombre, nip: "", rol: x.rol, activo: x.activo, correo: x.correo || "" }); setEditando(x.fila); };
+  const aplicar = async () => {
+    setGuardando(true);
+    const ok = await guardar(u);
+    setGuardando(false);
+    if (ok) setEditando(null);
+  };
+
+  if (editando) return <main>
+    <button className="btn ghost" onClick={() => setEditando(null)} style={{ marginBottom: 12 }}>← Volver</button>
+    <h2>{editando === "nuevo" ? "Nuevo usuario" : "Editar usuario"}</h2>
+    <p className="lead">{editando === "nuevo"
+      ? "El nombre debe coincidir con la lista de ingenieros del formulario para que sus órdenes se registren a su nombre."
+      : "Deje el NIP vacío si no quiere cambiarlo."}</p>
+    <div className="card">
+      {editando === "nuevo"
+        ? <label className="f"><span className="lb">Nombre <em>*</em></span>
+            <select value={u.nombre} onChange={e => setU({ ...u, nombre: e.target.value })}>
+              <option value="">Seleccione de la lista del formulario</option>
+              {ingenieros.map(i => <option key={i} value={i}>{i}</option>)}
+              <option value="__otro">Otro (escribir a mano)</option>
+            </select></label>
+        : <label className="f"><span className="lb">Nombre</span>
+            <input type="text" value={u.nombre} onChange={e => setU({ ...u, nombre: e.target.value })} /></label>}
+
+      {u.nombre === "__otro" && <label className="f"><span className="lb">Nombre a mano <em>*</em></span>
+        <input type="text" value={u.nombreLibre || ""} autoFocus
+          onChange={e => setU({ ...u, nombreLibre: e.target.value })} /></label>}
+
+      <label className="f"><span className="lb">NIP de 4 dígitos {editando === "nuevo" && <em>*</em>}</span>
+        <input type="text" inputMode="numeric" maxLength={4} value={u.nip}
+          onChange={e => setU({ ...u, nip: e.target.value.replace(/\D/g, "") })}
+          placeholder={editando === "nuevo" ? "1234" : "Sin cambios"} /></label>
+
+      <label className="f"><span className="lb">Rol</span>
+        <select value={u.rol} onChange={e => setU({ ...u, rol: e.target.value })}>
+          <option value="operador">Operador · captura sus órdenes</option>
+          <option value="visualizador">Visualizador · solo consulta el tablero</option>
+          <option value="administrador">Administrador · gestiona todo</option>
+        </select></label>
+
+      <label className="f"><span className="lb">Correo (opcional)</span>
+        <input type="email" value={u.correo} onChange={e => setU({ ...u, correo: e.target.value })} /></label>
+
+      <div className="chips" style={{ marginBottom: 14 }}>
+        <button type="button" className="chip" aria-pressed={u.activo} onClick={() => setU({ ...u, activo: true })}>Activo</button>
+        <button type="button" className="chip neg" aria-pressed={!u.activo} onClick={() => setU({ ...u, activo: false })}>Dado de baja</button>
+      </div>
+
+      <button className="btn primary block" disabled={guardando ||
+        (u.nombre === "__otro" ? !(u.nombreLibre || "").trim() : !u.nombre) ||
+        (editando === "nuevo" && u.nip.length !== 4) ||
+        (u.nip.length > 0 && u.nip.length !== 4)}
+        onClick={aplicar}>{guardando ? <span className="spin" /> : "Guardar usuario"}</button>
+    </div>
+  </main>;
+
+  return <main>
+    <h2>Usuarios</h2>
+    <p className="lead">Quién puede entrar a la app y con qué permisos.</p>
+    <button className="btn primary block" style={{ marginBottom: 10 }} onClick={nuevo}>Nuevo usuario</button>
+    <button className="btn ghost block" style={{ marginBottom: 14 }} onClick={cargar} disabled={cargando}>
+      {cargando ? <><span className="spin" /> Consultando…</> : "Actualizar"}</button>
+
+    {error && <div className="note bad">{error}</div>}
+    {!cargando && !usuarios.length && !error && <div className="empty">No hay usuarios registrados.</div>}
+
+    {usuarios.map(x => <div className="item" key={x.fila} style={x.activo ? null : { opacity: .55 }}>
+      <div className="body" onClick={() => editar(x)} style={{ cursor: "pointer" }}>
+        <div className="t">{x.nombre}{norm(x.nombre) === norm(yo) ? " (usted)" : ""}</div>
+        <div className="s">{x.rol === "administrador" ? "Administrador"
+          : x.rol === "visualizador" ? "Visualizador" : "Operador"}
+          {x.correo ? " · " + x.correo : ""}<br />
+          {x.activo ? "Activo" : "Dado de baja"}{x.tieneNip ? "" : " · sin NIP"}</div>
+      </div>
+      <span className={"tag " + (x.rol === "administrador" ? "pend" : "")}>
+        {x.rol === "administrador" ? "admin" : x.rol === "visualizador" ? "consulta" : "operador"}</span>
+    </div>)}
+  </main>;
+}
+
+function Chat({ ingeniero, sesion, esCoordinador, hilos, cargarHilos, cargando, error,
+  hiloAbierto, abrirHilo, cerrarHilo, mensajes, enviarMensaje, enviando, pendientes, noLeidos,
+  finalizar, ingenieros, reasignar }) {
+  const [confirmando, setConfirmando] = useState(false);
+  const [destino, setDestino] = useState("");
+  const [texto, setTexto] = useState("");
+  const [nuevo, setNuevo] = useState(false);
+  const [clave, setClave] = useState("");
+  const [titulo, setTitulo] = useState("");
+  const finRef = useRef(null);
+
+  useEffect(() => { cargarHilos(); }, []);
+  useEffect(() => { if (finRef.current) finRef.current.scrollIntoView({ block: "end" }); }, [mensajes.length]);
+
+  const mandar = async () => {
+    const t = texto.trim();
+    if (!t) return;
+    setTexto("");
+    await enviarMensaje(t);
+  };
+
+  if (nuevo) return <main>
+    <button className="btn ghost" onClick={() => setNuevo(false)} style={{ marginBottom: 12 }}>← Volver</button>
+    <h2>Nueva conversación</h2>
+    <p className="lead">Se identifica por el número de inventario del equipo o por el folio de la orden.</p>
+    <div className="card">
+      <label className="f"><span className="lb">Inventario o folio <em>*</em></span>
+        <input type="text" value={clave} onChange={e => setClave(e.target.value.toUpperCase())}
+          placeholder="PAT396 o IAB-24478" /></label>
+      <label className="f"><span className="lb">Asunto <em>*</em></span>
+        <input type="text" value={titulo} onChange={e => setTitulo(e.target.value)}
+          placeholder="Monitor de signos vitales, UCIN" /></label>
+      {/* La conversación pertenece a un ingeniero: es lo que decide quién la ve */}
+      {esCoordinador && <label className="f"><span className="lb">Dirigida a <em>*</em></span>
+        <select value={destino} onChange={e => setDestino(e.target.value)}>
+          <option value="">Seleccione ingeniero</option>
+          {ingenieros.map(i => <option key={i} value={i}>{i}</option>)}
+        </select></label>}
+      <button className="btn primary block"
+        disabled={!clave.trim() || !titulo.trim() || (esCoordinador && !destino)}
+        onClick={() => {
+          abrirHilo({ clave: clave.trim(), titulo: titulo.trim(), ingeniero: esCoordinador ? destino : ingeniero });
+          setNuevo(false); setClave(""); setTitulo(""); setDestino("");
+        }}>Abrir conversación</button>
+    </div>
+  </main>;
+
+  if (hiloAbierto) return <main>
+    <button className="btn ghost" onClick={cerrarHilo} style={{ marginBottom: 12 }}>← Conversaciones</button>
+    <h2>{hiloAbierto.titulo || hiloAbierto.clave}</h2>
+    <p className="lead">{hiloAbierto.clave}
+      {hiloAbierto.ingeniero ? " · dirigida a " + hiloAbierto.ingeniero : " · sin ingeniero asignado"}</p>
+
+    {esCoordinador && <div className="card tight" style={{ marginBottom: 14 }}>
+      <label className="f" style={{ marginBottom: 0 }}><span className="lb">Ingeniero asignado</span>
+        <select value={hiloAbierto.ingeniero || ""} onChange={e => reasignar(hiloAbierto, e.target.value)}>
+          <option value="">Sin asignar</option>
+          {ingenieros.map(i => <option key={i} value={i}>{i}</option>)}
+        </select></label>
+    </div>}
+
+    {!mensajes.length && <div className="empty">Todavía no hay mensajes. Escriba el primero.</div>}
+    <div className="burbujas">
+      {mensajes.map((m, i) => {
+        const mio = norm(m.autor) === norm(ingeniero);
+        return <div className={"msj" + (mio ? " mio" : "")} key={m.ts + "_" + i}>
+          {!mio && <div className="a">{m.autor}</div>}
+          <div className="m">{m.mensaje}</div>
+          <div className="h">{m.fecha ? new Date(m.fecha).toLocaleString("es-MX", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }) : ""}{m.enCola ? " · por enviar" : ""}</div>
+        </div>;
+      })}
+      <div ref={finRef} />
+    </div>
+
+    <div className="redactar">
+      <textarea value={texto} onChange={e => setTexto(e.target.value)} placeholder="Escriba su mensaje" />
+      <button className="btn primary" style={{ padding: "12px 18px" }} disabled={!texto.trim() || enviando} onClick={mandar}>
+        {enviando ? <span className="spin" /> : "Enviar"}</button>
+    </div>
+
+    {esCoordinador && (confirmando
+      ? <div className="note bad" style={{ marginTop: 14 }}>
+          Se van a borrar los {mensajes.length} mensajes de esta conversación para todos. No se puede deshacer.
+          <div className="actions" style={{ marginTop: 10 }}>
+            <button className="btn ghost" onClick={() => setConfirmando(false)}>Cancelar</button>
+            <button className="btn danger" onClick={() => { setConfirmando(false); finalizar(hiloAbierto); }}>
+              Sí, finalizar</button>
+          </div>
+        </div>
+      : <button className="btn danger ghost block" style={{ marginTop: 14 }} onClick={() => setConfirmando(true)}>
+          Finalizar conversación</button>)}
+  </main>;
+
+  return <main>
+    <h2>Chat</h2>
+    <p className="lead">{esCoordinador
+      ? "Todas las conversaciones del equipo."
+      : "Conversaciones sobre sus órdenes y equipos."}</p>
+
+    <button className="btn primary block" style={{ marginBottom: 10 }} onClick={() => setNuevo(true)}>Nueva conversación</button>
+    <button className="btn ghost block" style={{ marginBottom: 14 }} onClick={cargarHilos} disabled={cargando}>
+      {cargando ? <><span className="spin" /> Consultando…</> : "Actualizar"}</button>
+
+    {!!pendientes && <div className="note">{pendientes} mensaje(s) esperando señal. Se envían solos al reconectar.</div>}
+    {error && <div className="note bad">{error}</div>}
+    {!cargando && !hilos.length && !error && <div className="empty">No hay conversaciones todavía.</div>}
+
+    {hilos.map(h => <div className="hilo" key={h.clave} onClick={() => abrirHilo(h)}>
+      <div className="body">
+        <div className="t">{h.titulo || h.clave}</div>
+        <div className="u">{h.ultimoAutor ? h.ultimoAutor.split(" ")[0] + ": " : ""}{h.ultimo || ""}</div>
+        <div className="u" style={{ marginTop: 3, fontFamily: "var(--mono)", fontSize: 11 }}>
+          {h.clave}{esCoordinador
+            ? (h.ingeniero ? " · " + h.ingeniero.split(" ").slice(0, 2).join(" ")
+              : <span style={{ color: "var(--alert)" }}> · sin asignar</span>)
+            : ""}</div>
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 6, alignItems: "flex-end" }}>
+        <span className="h">{h.ultimaFecha ? new Date(h.ultimaFecha).toLocaleDateString("es-MX", { day: "2-digit", month: "short" }) : ""}</span>
+        {noLeidos[h.clave] > 0 && <span className="tag pend">{noLeidos[h.clave]} nuevo(s)</span>}
+      </div>
+    </div>)}
+  </main>;
+}
+
+function Ajustes({ ingeniero, salir, esquema, faltantes, mapa, recargar, estadoProxy, ultimaRevision,
+  rol, verUsuarios, cambiarNip }) {
+  const [prueba, setPrueba] = useState(null);
+  const [nips, setNips] = useState(null);
+  const [cambiando, setCambiando] = useState(false);
+
+  const aplicarNip = async () => {
+    setCambiando(true);
+    const err = await cambiarNip(nips.actual, nips.nuevo);
+    setCambiando(false);
+    if (!err) setNips(null); else setNips({ ...nips, err });
+  };
+  const probar = async () => {
+    setPrueba({ ok: null, texto: "Probando…" });
+    const url = CONFIG.PROXY_URL + "?action=ping&token=" + encodeURIComponent(CONFIG.TOKEN);
+    let principal = false, respaldo = false, det = "";
+
+    try {
+      const r = await fetch(url, { redirect: "follow" });
+      const cuerpo = (await r.text()).slice(0, 200);
+      principal = r.ok && cuerpo.indexOf('"ok":true') > -1;
+      det += "Camino principal (fetch) → HTTP " + r.status + "\n" + cuerpo;
+    } catch (e) { det += "Camino principal (fetch) → falló: " + e.message; }
+
+    det += "\n\n";
+    try { await Api.viaJsonp({ action: "ping" }); respaldo = true; det += "Camino de respaldo (jsonp) → correcto"; }
+    catch (e) { det += "Camino de respaldo (jsonp) → no disponible: " + e.message; }
+
+    // El respaldo solo entra si una red bloquea el camino principal: que falle
+    // por sí solo no afecta en nada el funcionamiento de la app.
+    det += "\n\nURL consultada:\n" + url;
+    setPrueba({
+      ok: principal || respaldo,
+      soloUno: (principal || respaldo) && !(principal && respaldo),
+      texto: det
+    });
+  };
+  return <main>
+    <h2>Ajustes</h2>
+    <p className="lead">Identidad, conexión y correspondencia de campos con el formulario de Jotform.</p>
+
+    <div className="card">
+      <div className="kv">
+        <div><b>Usuario:</b> {ingeniero}</div>
+        <div><b>Rol:</b> {rol === "administrador" ? "Administrador"
+          : rol === "visualizador" ? "Visualizador" : "Operador"}</div>
+        <div><b>Formulario:</b> {CONFIG.FORM_ID}</div>
+        <div><b>Versión de la app:</b> {CONFIG.BUILD || "Rev.01"}</div>
+        <div><b>Proxy en uso:</b> …{String(CONFIG.PROXY_URL).slice(-18)}</div>
+        <div><b>Estado del proxy:</b> {estadoProxy}</div>
+        <div><b>Última revisión:</b> {ultimaRevision ? new Date(ultimaRevision).toLocaleString("es-MX") : "sin revisar"}</div>
+        <div><b>Almacenamiento:</b> {Store.modo}</div>
+        <div><b>Preguntas leídas:</b> {esquema ? Object.keys(esquema).length : 0}</div>
+      </div>
+      <div className="actions" style={{ marginTop: 12 }}>
+        <button className="btn" onClick={recargar}>Releer formulario</button>
+        <button className="btn ghost" onClick={salir}>Cerrar sesión</button>
+      </div>
+      {rol === "administrador" && <button className="btn primary block" style={{ marginTop: 10 }}
+        onClick={verUsuarios}>Gestionar usuarios</button>}
+
+      {nips
+        ? <div style={{ marginTop: 14, borderTop: "1px solid var(--line)", paddingTop: 14 }}>
+            <label className="f"><span className="lb">NIP actual</span>
+              <input type="password" inputMode="numeric" maxLength={4} className="nip" value={nips.actual}
+                onChange={e => setNips({ ...nips, actual: e.target.value.replace(/\D/g, ""), err: "" })} /></label>
+            <label className="f"><span className="lb">NIP nuevo</span>
+              <input type="password" inputMode="numeric" maxLength={4} className="nip" value={nips.nuevo}
+                onChange={e => setNips({ ...nips, nuevo: e.target.value.replace(/\D/g, ""), err: "" })} /></label>
+            <label className="f"><span className="lb">Repita el NIP nuevo</span>
+              <input type="password" inputMode="numeric" maxLength={4} className="nip" value={nips.repetir}
+                onChange={e => setNips({ ...nips, repetir: e.target.value.replace(/\D/g, ""), err: "" })} /></label>
+            {nips.err && <div className="note bad">{nips.err}</div>}
+            {nips.nuevo && nips.repetir && nips.nuevo !== nips.repetir &&
+              <div className="note bad">Los dos NIP nuevos no coinciden.</div>}
+            <div className="actions">
+              <button className="btn ghost" onClick={() => setNips(null)}>Cancelar</button>
+              <button className="btn primary" disabled={cambiando ||
+                nips.actual.length !== 4 || nips.nuevo.length !== 4 || nips.nuevo !== nips.repetir}
+                onClick={aplicarNip}>{cambiando ? <span className="spin" /> : "Cambiar NIP"}</button>
+            </div>
+          </div>
+        : <button className="btn ghost block" style={{ marginTop: 10 }}
+            onClick={() => setNips({ actual: "", nuevo: "", repetir: "", err: "" })}>Cambiar mi NIP</button>}
+      <button className="btn ghost block" style={{ marginTop: 10 }} onClick={probar}>Probar conexión</button>
+      {prueba && prueba.ok !== null && <div className={"note" + (prueba.ok ? "" : " bad")} style={{ marginTop: 10 }}>
+        {prueba.ok
+          ? (prueba.soloUno
+            ? "Conexión correcta. Uno de los dos caminos no está disponible, pero la app funciona con el otro."
+            : "Conexión correcta por los dos caminos.")
+          : "Sin conexión con el proxy. Revise la URL y el token."}
+      </div>}
+      {prueba && <pre style={{ marginTop: 10, whiteSpace: "pre-wrap", wordBreak: "break-all",
+        fontFamily: "var(--mono)", fontSize: 11, lineHeight: 1.6, color: "var(--muted)",
+        background: "#04121F", border: "1px solid var(--line)", borderRadius: 8, padding: 10 }}>{prueba.texto}</pre>}
+    </div>
+
+    <h2 style={{ marginTop: 20 }}>Correspondencia de campos</h2>
+    {faltantes.length
+      ? <div className="note bad">{faltantes.length} campo(s) sin localizar en el formulario: {faltantes.map(f => f.et).join(", ")}. Esos datos no se envían.</div>
+      : <div className="note">Los {Object.keys(mapa).length} campos de la app quedaron enlazados al formulario.</div>}
+    <div className="card"><div className="kv">
+      {TODOS.map(c => {
+        const m = mapa[c.k];
+        return <div key={c.k}><b>{c.et}</b> → {m ? `qid ${m.qid} · ${m.type.replace("control_", "")}` : <span style={{ color: "var(--alert)" }}>sin enlazar</span>}</div>;
+      })}
+    </div></div>
+  </main>;
+}
+
+/* ==========================================================
+   7. APP
+   ========================================================== */
+function App() {
+  const [listo, setListo] = useState(false);
+  const [ingeniero, setIngeniero] = useState("");
+  const [tab, setTab] = useState("tablero");
+  const [editando, setEditando] = useState(null);
+  const [borradores, setBorradores] = useState([]);
+  const [cola, setCola] = useState([]);
+  const [enviados, setEnviados] = useState([]);
+  const [esquema, setEsquema] = useState(null);
+  const [estadoProxy, setEstadoProxy] = useState("sin verificar");
+  const [online, setOnline] = useState(navigator.onLine);
+  const [enviando, setEnviando] = useState(false);
+  const [cargandoEnvios, setCargandoEnvios] = useState(false);
+  const [errEnvios, setErrEnvios] = useState("");
+  const [toast, setToast] = useState(null);
+  const [ultimaRevision, setUltimaRevision] = useState(0);
+  const [avisos, setAvisos] = useState([]);
+  const [cargandoAvisos, setCargandoAvisos] = useState(false);
+  const [errAvisos, setErrAvisos] = useState("");
+  const [avisosVistos, setAvisosVistos] = useState(0);
+  const [sesion, setSesion] = useState("");
+  const [rol, setRol] = useState("operador");
+  const [usuarios, setUsuarios] = useState([]);
+  const [usuariosAdmin, setUsuariosAdmin] = useState([]);
+  const [cargandoUsuarios, setCargandoUsuarios] = useState(false);
+  const [errUsuarios, setErrUsuarios] = useState("");
+  const [tareas, setTareas] = useState([]);
+  const [cargandoTareas, setCargandoTareas] = useState(false);
+  const [errTareas, setErrTareas] = useState("");
+  const [enviandoRep, setEnviandoRep] = useState(false);
+  const [enviandoUbic, setEnviandoUbic] = useState(false);
+  const [versionNueva, setVersionNueva] = useState(null);
+  const [verTodos, setVerTodos] = useState(false);
+  const [hilos, setHilos] = useState([]);
+  const [hiloAbierto, setHiloAbierto] = useState(null);
+  const [mensajes, setMensajes] = useState([]);
+  const [cargandoChat, setCargandoChat] = useState(false);
+  const [errChat, setErrChat] = useState("");
+  const [enviandoMsj, setEnviandoMsj] = useState(false);
+  const [colaChat, setColaChat] = useState([]);
+  const [leidos, setLeidos] = useState({});
+
+  const { mapa, faltantes } = useMemo(() => esquema ? resolverMapa(esquema) : { mapa: {}, faltantes: TODOS }, [esquema]);
+
+  const avisar = (msg, malo) => { setToast({ msg, malo }); setTimeout(() => setToast(null), 3600); };
+
+  const refrescar = useCallback(async () => {
+    const [d, o] = await Promise.all([Store.all("drafts"), Store.all("outbox")]);
+    setBorradores(d.sort((a, b) => b.actualizada - a.actualizada));
+    setCola(o.sort((a, b) => a.creada - b.creada));
+  }, []);
+
+  const leerEsquema = useCallback(async (silencio) => {
+    try {
+      // Al pedirlo a mano se salta la caché del proxy: es lo que se espera de
+      // un botón llamado "Releer formulario".
+      const d = await Api.get(silencio ? { action: "schema" } : { action: "schema", fresco: "1" });
+      setEsquema(d.questions); setEstadoProxy("conectado"); setUltimaRevision(Date.now());
+      await Store.put("meta", { id: "schema", questions: d.questions, ts: Date.now() });
+      if (!silencio) avisar("Formulario leído: " + Object.keys(d.questions).length + " preguntas");
+    } catch (e) {
+      setEstadoProxy("sin conexión: " + e.message);
+      const c = await Store.one("meta", "schema");
+      if (c) setEsquema(c.questions);
+      if (!silencio) avisar(e.message, true);
+    }
+  }, []);
+
+  useEffect(() => {
+    (async () => {
+      await Store.init();
+      const g = await Store.one("meta", "ingeniero");
+      const ses0 = await Store.one("meta", "sesion");
+      // Sin sesión vigente no hay identidad: la app siempre pide NIP al entrar.
+      if (g && ses0 && ses0.token && Date.now() - ses0.ts < 12 * 3600 * 1000) setIngeniero(g.valor);
+      const c = await Store.one("meta", "schema");
+      if (c) setEsquema(c.questions);
+      const vistos = await Store.one("meta", "avisosVistos");
+      if (vistos) setAvisosVistos(vistos.ts || 0);
+      const ses = await Store.one("meta", "sesion");
+      // La sesión dura 12 horas en el servidor. Al vencer se pide el NIP otra vez.
+      if (ses && ses.token && Date.now() - ses.ts < 12 * 3600 * 1000) {
+        setSesion(ses.token); setRol(ses.rol || "operador");
+      } else if (ses) {
+        await Store.del("meta", "sesion");
+        await Store.del("meta", "ingeniero");
+      }
+      const up = await Store.one("meta", "usuariosPublicos");
+      if (up) setUsuarios(up.items || []);
+      const l = await Store.one("meta", "leidos");
+      if (l) setLeidos(l.mapa || {});
+      setColaChat(await Store.all("chatCola"));
+      if (g) {
+        const guardados = await Store.one("meta", "avisos:" + g.valor);
+        if (guardados) setAvisos(guardados.items || []);
+      }
+      await refrescar();
+      setListo(true);
+      leerEsquema(true);
+      if (!ses0 || !ses0.token) cargarUsuariosPublicos();
+      else confirmarSesion(ses0.token);
+    })();
+    const nueva = e => setVersionNueva(e.detail);
+    window.addEventListener("versionNueva", nueva);
+    const on = () => setOnline(true), off = () => setOnline(false);
+    window.addEventListener("online", on); window.addEventListener("offline", off);
+    return () => {
+      window.removeEventListener("online", on); window.removeEventListener("offline", off);
+      window.removeEventListener("versionNueva", nueva);
+    };
+  }, []);
+
+
+  /* El rol guardado en el teléfono puede haber cambiado en la hoja. Al abrir se
+     pregunta al servidor: si cambió, se actualiza; si la sesión ya no es válida
+     (baja, vencimiento), se pide el NIP otra vez. Sin conexión se conserva la
+     sesión guardada para no dejar al ingeniero fuera en campo. */
+  const confirmarSesion = async token => {
+    if (!navigator.onLine) return;
+    try {
+      const d = await Api.get({ action: "sesion", sesion: token });
+      if (!d.sesion) {
+        await Store.del("meta", "sesion");
+        await Store.del("meta", "ingeniero");
+        setSesion(""); setRol("operador"); setIngeniero("");
+        cargarUsuariosPublicos();
+        avisar("Su sesión terminó. Entre de nuevo con su NIP.", true);
+        return;
+      }
+      setRol(d.sesion.rol);
+      const ses = await Store.one("meta", "sesion");
+      if (ses) await Store.put("meta", { ...ses, rol: d.sesion.rol });
+    } catch (e) { /* sin respuesta se conserva lo guardado */ }
+  };
+
+  const cargarUsuariosPublicos = useCallback(async () => {
+    setCargandoUsuarios(true);
+    try {
+      const d = await Api.get({ action: "usuariosPublicos" });
+      setUsuarios(d.usuarios || []);
+      await Store.put("meta", { id: "usuariosPublicos", items: d.usuarios, ts: Date.now() });
+    } catch (e) {
+      const c = await Store.one("meta", "usuariosPublicos");
+      if (c) setUsuarios(c.items || []);
+    }
+    setCargandoUsuarios(false);
+  }, []);
+
+  const entrar = async (nombre, nip) => {
+    try {
+      const d = await Api.get({ action: "login", nombre, nip });
+      await Store.put("meta", { id: "sesion", token: d.sesion, nombre: d.nombre, rol: d.rol, ts: Date.now() });
+      await Store.put("meta", { id: "ingeniero", valor: d.nombre });
+      setSesion(d.sesion); setRol(d.rol); setIngeniero(d.nombre);
+      return "";
+    } catch (e) { return e.message; }
+  };
+
+  const cargarTareas = useCallback(async () => {
+    setCargandoTareas(true); setErrTareas("");
+    try {
+      const d = await Api.get({ action: "tareas", sesion });
+      setTareas(d.tareas || []);
+      await Store.put("meta", { id: "tareas:" + ingeniero, items: d.tareas, ts: Date.now() });
+    } catch (e) {
+      const c = await Store.one("meta", "tareas:" + ingeniero);
+      if (c) { setTareas(c.items || []); setErrTareas("Sin conexión. Se muestra el último tablero guardado."); }
+      else setErrTareas("No se pudo consultar el tablero: " + e.message);
+    }
+    setCargandoTareas(false);
+  }, [sesion, ingeniero]);
+
+  const guardarTarea = useCallback(async t => {
+    try {
+      await Api.post({ action: "tareaGuardar", ...t, sesion });
+      await cargarTareas();
+      avisar("Tarea guardada");
+      return true;
+    } catch (e) { avisar("No se pudo guardar: " + e.message, true); return false; }
+  }, [sesion, cargarTareas]);
+
+  const moverTarea = useCallback(async (t, estado, comentario) => {
+    // Se refleja de inmediato y se confirma con el servidor: en campo la red tarda
+    setTareas(prev => prev.map(x => x.id === t.id ? { ...x, estado } : x));
+    try {
+      await Api.post({ action: "tareaEstado", id: t.id, estado, comentario, sesion });
+      cargarTareas();
+    } catch (e) { avisar("No se pudo mover: " + e.message, true); cargarTareas(); }
+  }, [sesion, cargarTareas]);
+
+  const enviarUbicaciones = useCallback(async f => {
+    setEnviandoUbic(true);
+    try {
+      const d = await Api.post({ action: "reporteUbicaciones", ...f, sesion });
+      avisar(d.filas + " asignación(es) enviadas a " + d.correo);
+    } catch (e) { avisar("No se pudo enviar: " + e.message, true); }
+    setEnviandoUbic(false);
+  }, [sesion]);
+
+  const enviarReporte = useCallback(async f => {
+    setEnviandoRep(true);
+    try {
+      const d = await Api.post({ action: "reporteEnviar", ...f, sesion });
+      avisar("Reporte enviado a " + (d.destinos || []).join(", "));
+    } catch (e) { avisar("No se pudo enviar: " + e.message, true); }
+    setEnviandoRep(false);
+  }, [sesion]);
+
+  const eliminarTarea = useCallback(async t => {
+    try {
+      await Api.post({ action: "tareaEliminar", id: t.id, sesion });
+      await cargarTareas();
+      avisar("Tarea eliminada");
+    } catch (e) { avisar("No se pudo eliminar: " + e.message, true); }
+  }, [sesion, cargarTareas]);
+
+  const cambiarMiNip = useCallback(async (nipActual, nipNuevo) => {
+    try {
+      await Api.post({ action: "cambiarNip", nipActual, nipNuevo, sesion });
+      avisar("NIP actualizado. Úselo la próxima vez que entre.");
+      return "";
+    } catch (e) { return e.message; }
+  }, [sesion]);
+
+  const cargarUsuariosAdmin = useCallback(async () => {
+    setCargandoUsuarios(true); setErrUsuarios("");
+    try {
+      const d = await Api.get({ action: "usuarios", sesion });
+      setUsuariosAdmin(d.usuarios || []);
+    } catch (e) { setErrUsuarios(e.message); }
+    setCargandoUsuarios(false);
+  }, [sesion]);
+
+  const guardarUsuario = useCallback(async datos => {
+    try {
+      const nombre = datos.nombre === "__otro" ? (datos.nombreLibre || "").trim() : datos.nombre;
+      await Api.post({ action: "usuarioGuardar", ...datos, nombre, sesion });
+      await cargarUsuariosAdmin();
+      await cargarUsuariosPublicos();
+      avisar("Usuario guardado");
+      return true;
+    } catch (e) { avisar("No se pudo guardar: " + e.message, true); return false; }
+  }, [sesion, cargarUsuariosAdmin, cargarUsuariosPublicos]);
+
+  const guardarBorrador = async (b, silencio) => {
+    await Store.put("drafts", b);
+    if (!silencio) { await refrescar(); avisar("Borrador guardado"); }
+    else setBorradores(prev => { const o = prev.filter(x => x.id !== b.id); return [b, ...o]; });
+  };
+
+  const enviarUno = async o => {
+    const payload = construirPayload(o.valores, mapa);
+    // Los borradores creados antes de esta versión no traen folio: se les asigna
+    // uno y se guarda, para que un reintento posterior tampoco duplique.
+    if (!o.folio) {
+      o.folio = "IAB-" + Math.floor(10000 + Math.random() * 90000);
+      await Store.put("outbox", o);
+    }
+    const fotos = (o.valores.fotos || []).map(f => ({ nombre: f.nombre, dataUrl: f.dataUrl }));
+    const campoFotos = mapa.fotos ? mapa.fotos.qid : null;
+    const r = await Api.post({ action: "submit", answers: payload, fotos, campoFotos, cliente: o.id, folio: o.folio });
+    return r;
+  };
+
+  const procesarCola = useCallback(async (manual) => {
+    if (enviando) return;
+    const pend = await Store.all("outbox");
+    if (!pend.length) { if (manual) avisar("No hay nada por enviar"); return; }
+    if (!esquema) { if (manual) avisar("Primero hay que leer el formulario (Ajustes)", true); return; }
+    setEnviando(true);
+    let ok = 0, fail = 0, devueltas = 0; const avisos = [];
+    for (const o of pend.sort((a, b) => a.creada - b.creada)) {
+      try {
+        const r = await enviarUno(o);
+        await Store.del("outbox", o.id);
+        await Store.put("sent", { id: o.id, submissionID: r.submissionID, valores: o.valores, ts: Date.now() });
+        if (r.aviso) avisos.push(r.aviso);
+        ok++;
+      } catch (e) {
+        // Sin señal la orden espera en la cola y se reintenta sola: ahí no hay
+        // riesgo de duplicar, porque el envío nunca llegó al servidor.
+        // Si el servidor respondió con error, la orden vuelve a borradores y el
+        // reenvío queda en manos del ingeniero. Reintentar solo sobre una respuesta
+        // ambigua es justo lo que generaba órdenes duplicadas.
+        const sinSenal = !navigator.onLine ||
+          /sin señal|no se pudo conectar|no pudo cargar el proxy|no respondió a tiempo/i.test(e.message);
+        if (sinSenal) {
+          await Store.put("outbox", { ...o, intentos: (o.intentos || 0) + 1, error: e.message });
+          fail++;
+        } else {
+          await Store.del("outbox", o.id);
+          await Store.put("drafts", { ...o, actualizada: Date.now(), errorEnvio: e.message });
+          devueltas++;
+        }
+      }
+    }
+    setEnviando(false); await refrescar();
+    if (avisos.length) avisar(avisos[0], true);
+    else if (devueltas) avisar(devueltas === 1
+      ? "La orden regresó a borradores. Revísela y vuelva a enviarla."
+      : devueltas + " órdenes regresaron a borradores.", true);
+    else if (ok && !fail) avisar(ok === 1 ? "Orden enviada a Jotform" : ok + " órdenes enviadas");
+    else if (ok && fail) avisar(`${ok} enviada(s), ${fail} espera(n) señal`, true);
+    else if (fail) avisar("Sin señal. La orden espera y se enviará al reconectar.", true);
+  }, [enviando, esquema, mapa, refrescar]);
+
+  useEffect(() => { if (online && listo && esquema) procesarCola(false); }, [online, listo, esquema]);
+
+  // Corrige el nombre guardado si difiere del que espera el formulario
+  const ajustarIngeniero = b => {
+    const bueno = nombreDeFormulario(b.valores.ingeniero || ingeniero, mapa);
+    if (!bueno || bueno === b.valores.ingeniero) return b;
+    return { ...b, valores: { ...b.valores, ingeniero: bueno } };
+  };
+
+  const encolar = async b => {
+    await Store.put("outbox", { ...b, creada: Date.now(), intentos: 0, error: "", errorEnvio: "" });
+    await Store.del("drafts", b.id);
+    setEditando(null); setTab("cola"); await refrescar();
+    procesarCola(false);
+  };
+
+  // El rol viene del servidor; la app solo lo refleja. Un administrador ve todo,
+  // un operador solo sus órdenes y sus conversaciones.
+  const esCoordinador = rol === "administrador";
+  // Perfil de solo consulta: ve el tablero y nada más
+  const esVisualizador = rol === "visualizador";
+
+  const cargarHilos = useCallback(async () => {
+    setCargandoChat(true); setErrChat("");
+    try {
+      const d = await Api.get({ action: "chatHilos", ingeniero, sesion });
+      setHilos(d.hilos || []);
+      await Store.put("meta", { id: "hilos:" + ingeniero, items: d.hilos, ts: Date.now() });
+    } catch (e) {
+      const c = await Store.one("meta", "hilos:" + ingeniero);
+      if (c) { setHilos(c.items || []); setErrChat("Sin conexión. Se muestran las últimas conversaciones guardadas."); }
+      else setErrChat("No se pudo consultar el chat: " + e.message);
+    }
+    setCargandoChat(false);
+  }, [ingeniero, sesion]);
+
+  const cargarMensajes = useCallback(async (hilo, silencio) => {
+    if (!hilo) return;
+    try {
+      const d = await Api.get({ action: "chatMensajes", clave: hilo.clave });
+      const cola = (await Store.all("chatCola")).filter(m => m.clave === hilo.clave);
+      setMensajes([...(d.mensajes || []), ...cola.map(m => ({ ...m, enCola: true }))]);
+      await Store.put("meta", { id: "msj:" + hilo.clave, items: d.mensajes, ts: Date.now() });
+      const marca = Date.now();
+      setLeidos(prev => ({ ...prev, [hilo.clave]: marca }));
+      await Store.put("meta", { id: "leidos", mapa: { ...leidos, [hilo.clave]: marca } });
+    } catch (e) {
+      if (!silencio) {
+        const c = await Store.one("meta", "msj:" + hilo.clave);
+        if (c) setMensajes(c.items || []);
+      }
+    }
+  }, [leidos]);
+
+  const abrirHilo = useCallback(async hilo => {
+    setHiloAbierto(hilo); setMensajes([]);
+    await cargarMensajes(hilo);
+  }, [cargarMensajes]);
+
+  const procesarColaChat = useCallback(async () => {
+    const pend = await Store.all("chatCola");
+    if (!pend.length || !navigator.onLine) { setColaChat(pend); return; }
+    for (const m of pend.sort((a, b) => a.ts - b.ts)) {
+      try {
+        await Api.post({ action: "chatEnviar", clave: m.clave, titulo: m.titulo,
+          ingeniero: m.ingeniero, autor: m.autor, mensaje: m.mensaje, sesion });
+        await Store.del("chatCola", m.id);
+      } catch (e) { /* se queda para el siguiente intento */ }
+    }
+    setColaChat(await Store.all("chatCola"));
+  }, [sesion]);
+
+  const enviarMensaje = useCallback(async texto => {
+    if (!hiloAbierto) return;
+    setEnviandoMsj(true);
+    const autor = esCoordinador ? "Proyectos IA Biomédica" : ingeniero;
+    const m = { id: uid(), ts: Date.now(), fecha: new Date().toISOString(), clave: hiloAbierto.clave,
+      titulo: hiloAbierto.titulo, ingeniero: hiloAbierto.ingeniero || ingeniero, autor, mensaje: texto };
+    setMensajes(prev => [...prev, { ...m, enCola: true }]);
+    try {
+      await Api.post({ action: "chatEnviar", clave: m.clave, titulo: m.titulo,
+        ingeniero: m.ingeniero, autor: m.autor, mensaje: m.mensaje, sesion });
+      await cargarMensajes(hiloAbierto, true);
+      cargarHilos();
+    } catch (e) {
+      // Sin señal el mensaje espera en el dispositivo, igual que las órdenes
+      await Store.put("chatCola", m);
+      setColaChat(await Store.all("chatCola"));
+      avisar("Sin señal. El mensaje se enviará al reconectar.", true);
+    }
+    setEnviandoMsj(false);
+  }, [hiloAbierto, ingeniero, esCoordinador, sesion, cargarMensajes, cargarHilos]);
+
+  const guardarAviso = useCallback(async datos => {
+    try {
+      await Api.post({ action: "avisoGuardar", ...datos, sesion });
+      await cargarAvisos();
+      avisar("Aviso publicado");
+      return true;
+    } catch (e) { avisar("No se pudo publicar: " + e.message, true); return false; }
+  }, [sesion]);
+
+  const reasignarHilo = useCallback(async (hilo, nuevoIngeniero) => {
+    try {
+      await Api.post({ action: "chatReasignar", clave: hilo.clave, ingeniero: nuevoIngeniero, sesion });
+      setHiloAbierto({ ...hilo, ingeniero: nuevoIngeniero });
+      await cargarHilos();
+      avisar(nuevoIngeniero ? "Conversación asignada a " + nuevoIngeniero.split(" ")[0] : "Conversación sin asignar");
+    } catch (e) { avisar("No se pudo reasignar: " + e.message, true); }
+  }, [sesion, cargarHilos]);
+
+  const finalizarHilo = useCallback(async hilo => {
+    try {
+      await Api.post({ action: "chatEliminar", clave: hilo.clave, sesion });
+      setHiloAbierto(null); setMensajes([]);
+      await cargarHilos();
+      avisar("Conversación finalizada");
+    } catch (e) { avisar("No se pudo finalizar: " + e.message, true); }
+  }, [sesion, cargarHilos]);
+
+  const cargarAvisos = useCallback(async () => {
+    setCargandoAvisos(true); setErrAvisos("");
+    try {
+      const d = await Api.get({ action: "avisos", ingeniero, sesion });
+      setAvisos(d.avisos || []);
+      await Store.put("meta", { id: "avisos:" + ingeniero, items: d.avisos, ts: Date.now() });
+    } catch (e) {
+      const c = await Store.one("meta", "avisos:" + ingeniero);
+      if (c) { setAvisos(c.items || []); setErrAvisos("Sin conexión. Se muestran los últimos avisos guardados."); }
+      else setErrAvisos("No se pudieron consultar los avisos: " + e.message);
+    }
+    setCargandoAvisos(false);
+  }, [ingeniero, sesion]);
+
+  // Revisión periódica: relee el formulario cada 10 minutos y al volver a la app.
+  // Así el mapeo de campos y el estado del proxy se verifican antes de que un
+  // ingeniero intente enviar, y no en el momento de enviar.
+  useEffect(() => {
+    if (!listo || !ingeniero) return;
+    const revisar = () => { if (navigator.onLine) { leerEsquema(true); cargarAvisos(); } };
+    const reloj = setInterval(revisar, 10 * 60 * 1000);
+    const alVolver = () => { if (document.visibilityState === "visible") revisar(); };
+    document.addEventListener("visibilitychange", alVolver);
+    window.addEventListener("online", revisar);
+    return () => {
+      clearInterval(reloj);
+      document.removeEventListener("visibilitychange", alVolver);
+      window.removeEventListener("online", revisar);
+    };
+  }, [listo, ingeniero, leerEsquema, cargarAvisos]);
+
+  // El chat se consulta solo mientras su pestaña está abierta, cada 25 segundos.
+  // Un sondeo permanente agotaría la cuota diaria de Apps Script y dejaría sin
+  // servicio el envío de órdenes, que es lo que no puede fallar.
+  useEffect(() => {
+    if (tab !== "chat" || !listo) return;
+    const reloj = setInterval(() => {
+      if (!navigator.onLine) return;
+      if (hiloAbierto) cargarMensajes(hiloAbierto, true); else cargarHilos();
+    }, 25000);
+    return () => clearInterval(reloj);
+  }, [tab, listo, hiloAbierto, cargarMensajes, cargarHilos]);
+
+  useEffect(() => { if (online && listo) procesarColaChat(); }, [online, listo, procesarColaChat]);
+
+  const cargarEnvios = useCallback(async () => {
+    setCargandoEnvios(true); setErrEnvios("");
+    try {
+      const d = await Api.get({ action: "submissions", ingeniero, limit: 500 });
+      setEnviados(d.items || []);
+      await Store.put("meta", { id: "envios:" + ingeniero, items: d.items, ts: Date.now() });
+    } catch (e) {
+      const c = await Store.one("meta", "envios:" + ingeniero);
+      if (c) { setEnviados(c.items || []); setErrEnvios("Sin conexión. Mostrando la última consulta guardada."); }
+      else setErrEnvios("No se pudo consultar: " + e.message);
+    }
+    setCargandoEnvios(false);
+  }, [ingeniero]);
+
+  if (!listo) return <div className="center"><span className="spin" /></div>;
+  if (!ingeniero) return <Identificacion onEntrar={entrar} usuarios={usuarios}
+    recargar={cargarUsuariosPublicos} cargando={cargandoUsuarios} />;
+
+  const noLeidosPorHilo = {};
+  hilos.forEach(h => {
+    const marca = leidos[h.clave] || 0;
+    noLeidosPorHilo[h.clave] = (h.ultimoTs && h.ultimoTs > marca) ? 1 : 0;
+  });
+  const hilosNuevos = Object.values(noLeidosPorHilo).filter(Boolean).length;
+
+  const avisosNuevos = avisos.filter(a => a.fecha && new Date(a.fecha).getTime() > avisosVistos).length;
+  const verAvisos = async () => {
+    setTab("avisos");
+    const ahora = Date.now();
+    setAvisosVistos(ahora);
+    await Store.put("meta", { id: "avisosVistos", ts: ahora });
+  };
+
+  // Una pestaña guardada de una sesión anterior no debe abrirle al visualizador
+  // una vista que su perfil no tiene.
+  const tabActual = (esVisualizador && tab !== "tablero" && tab !== "ajustes") ? "tablero" : tab;
+
+  // Se compara normalizado: el nombre del usuario y el del formulario pueden
+  // diferir en un acento o un espacio, y esa diferencia escondía los borradores.
+  const misBorradores = borradores.filter(b =>
+    !b.valores.ingeniero || norm(b.valores.ingeniero) === norm(ingeniero));
+  const deOtros = borradores.length - misBorradores.length;
+
+  return <>
+    <header className="readout">
+      <div className="readout-top">
+        <img src="icon-192.png" alt="" width="26" height="26"
+          style={{ borderRadius: 5, background: "#fff", flexShrink: 0 }} />
+        <div className="brand">Orden de <span>Trabajo</span></div>
+        <div className="who">{ingeniero.split(" ").slice(0, 2).join(" ")}<br />{esCoordinador ? "Coordinación" : "IA Biomédica"}</div>
+        <button onClick={() => setTab("ajustes")} aria-label="Ajustes"
+          style={{ background: "none", border: 0, color: tabActual === "ajustes" ? "var(--amber)" : "var(--muted)",
+            fontSize: 19, cursor: "pointer", padding: "2px 0 2px 10px", lineHeight: 1 }}>⚙</button>
+      </div>
+      <div className="strip">
+        <div className="cell"><b className={online ? "on" : "off"}>{online ? "EN LÍNEA" : "SIN SEÑAL"}</b><i>conexión</i></div>
+        <div className="cell"><b>{misBorradores.length}</b><i>borradores</i></div>
+        <div className="cell"><b className={cola.length ? "wait" : ""}>{cola.length}</b><i>por enviar</i></div>
+        <div className="cell">
+          <b className={esquema ? "on" : "off"}>
+            {esquema ? (ultimaRevision ? new Date(ultimaRevision).toLocaleTimeString("es-MX", { hour: "2-digit", minute: "2-digit" }) : "OK") : "—"}
+          </b><i>revisado</i>
+        </div>
+      </div>
+    </header>
+
+    {editando
+      ? <Formulario borrador={editando} mapa={mapa} faltantes={faltantes}
+          guardar={guardarBorrador} enviar={encolar} cancelar={() => { setEditando(null); refrescar(); }} />
+      : tabActual === "tablero" ? <Tablero tareas={tareas} cargar={cargarTareas} cargando={cargandoTareas}
+          error={errTareas} esAdmin={esCoordinador} yo={ingeniero} guardar={guardarTarea}
+          mover={moverTarea} eliminar={eliminarTarea} esVisualizador={esVisualizador}
+          enviarReporte={enviarReporte} enviandoRep={enviandoRep}
+          enviarUbicaciones={enviarUbicaciones} enviandoUbic={enviandoUbic}
+          ingenieros={(mapa.ingeniero && mapa.ingeniero.opciones) || INGENIEROS} />
+      : tabActual === "borradores" ? <ListaBorradores borradores={verTodos ? borradores : misBorradores}
+          mapa={mapa} enviar={encolar} deOtros={deOtros} verTodos={verTodos}
+          alternarTodos={() => setVerTodos(v => !v)}
+          cola={cola} enviando={enviando} reintentar={() => procesarCola(true)}
+          devolver={async id => { const o = await Store.one("outbox", id); await Store.del("outbox", id); if (o) await Store.put("drafts", { ...o, actualizada: Date.now() }); await refrescar(); avisar("Regresó a borradores"); }}
+          abrir={b => setEditando(ajustarIngeniero(b))}
+          nuevo={() => setEditando(nuevaOrden(nombreDeFormulario(ingeniero, mapa)))}
+          borrar={async id => { await Store.del("drafts", id); await refrescar(); avisar("Borrador eliminado"); }} />
+      : tabActual === "envios" ? <MisEnvios ingeniero={ingeniero} enviados={enviados} cargar={cargarEnvios} cargando={cargandoEnvios} error={errEnvios} />
+      : tabActual === "avisos" ? <Avisos ingeniero={ingeniero} avisos={avisos} cargar={cargarAvisos}
+          cargando={cargandoAvisos} error={errAvisos} esCoordinador={esCoordinador}
+          ingenieros={(mapa.ingeniero && mapa.ingeniero.opciones) || INGENIEROS} guardar={guardarAviso} />
+      : tabActual === "usuarios" ? <Usuarios usuarios={usuariosAdmin} cargar={cargarUsuariosAdmin}
+          cargando={cargandoUsuarios} error={errUsuarios} guardar={guardarUsuario} yo={ingeniero}
+          ingenieros={(mapa.ingeniero && mapa.ingeniero.opciones) || INGENIEROS} />
+      : tabActual === "chat" ? <Chat ingeniero={ingeniero} sesion={sesion} esCoordinador={esCoordinador}
+          hilos={hilos} cargarHilos={cargarHilos} cargando={cargandoChat} error={errChat}
+          hiloAbierto={hiloAbierto} abrirHilo={abrirHilo} cerrarHilo={() => { setHiloAbierto(null); cargarHilos(); }}
+          mensajes={mensajes} enviarMensaje={enviarMensaje} enviando={enviandoMsj}
+          pendientes={colaChat.length} noLeidos={noLeidosPorHilo} finalizar={finalizarHilo}
+          ingenieros={(mapa.ingeniero && mapa.ingeniero.opciones) || INGENIEROS} reasignar={reasignarHilo} />
+      : <Ajustes ingeniero={ingeniero} esquema={esquema} mapa={mapa} faltantes={faltantes}
+          estadoProxy={estadoProxy} ultimaRevision={ultimaRevision} recargar={() => leerEsquema(false)}
+          rol={rol} verUsuarios={() => setTab("usuarios")} cambiarNip={cambiarMiNip}
+          salir={async () => {
+            // Cerrar identidad debe cerrar también la sesión: si no, quien vuelva
+            // a entrar dentro de las 12 horas queda como coordinación sin PIN.
+            await Store.del("meta", "ingeniero");
+            await Store.del("meta", "sesion");
+            setSesion(""); setRol("operador"); setIngeniero("");
+            setHilos([]); setHiloAbierto(null); setAvisos([]); setUsuariosAdmin([]);
+          }} />}
+
+    {toast && <div className={"toast" + (toast.malo ? " bad" : "")}>{toast.msg}</div>}
+
+    {versionNueva && !editando && <div className="actualizar">
+      <span className="txt">Hay una versión nueva disponible</span>
+      <button onClick={() => {
+        // Si hay órdenes a medias se avisa: la recarga no las borra, pero
+        // conviene que el ingeniero lo sepa antes de que la pantalla cambie.
+        if (versionNueva.waiting) versionNueva.waiting.postMessage("actualizar");
+        else location.reload();
+      }}>Actualizar</button>
+      <button className="x" onClick={() => setVersionNueva(null)}>Después</button>
+    </div>}
+
+    {!editando && <nav className="tabs">
+      {(esVisualizador
+        ? [["tablero", "▦", "Tablero"]]
+        : [["tablero", "▦", "Tablero"], ["borradores", "▤", "Borradores"], ["envios", "✓", "Mis envíos"],
+           ["avisos", "⚑", "Avisos"], ["chat", "✉", "Chat"]]).map(([k, ic, et]) =>
+        <button key={k} aria-current={tabActual === k ? "page" : undefined}
+          onClick={() => k === "avisos" ? verAvisos() : setTab(k)}>
+          <span className="ic">{ic}</span>{et}
+          {k === "borradores" && cola.length > 0 && <span className="badge">{cola.length}</span>}
+          {k === "avisos" && avisosNuevos > 0 && <span className="badge">{avisosNuevos}</span>}
+          {k === "chat" && (hilosNuevos + colaChat.length) > 0 && <span className="badge">{hilosNuevos + colaChat.length}</span>}
+        </button>)}
+    </nav>}
+  </>;
+}
+
+window.__appLista = true;
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+
+/* Actualizaciones: cuando hay una versión nueva esperando, se avisa en pantalla
+   en lugar de recargar solo. Recargar sin permiso en medio de una captura sería
+   peor que quedarse una hora con la versión anterior. */
+if ("serviceWorker" in navigator && location.protocol === "https:") {
+  window.addEventListener("load", async () => {
+    try {
+      const reg = await navigator.serviceWorker.register("sw.js");
+
+      const revisar = () => {
+        if (reg.waiting && navigator.serviceWorker.controller) {
+          window.dispatchEvent(new CustomEvent("versionNueva", { detail: reg }));
+        }
+      };
+      revisar();
+      reg.addEventListener("updatefound", () => {
+        const nuevo = reg.installing;
+        if (!nuevo) return;
+        nuevo.addEventListener("statechange", () => {
+          if (nuevo.state === "installed" && navigator.serviceWorker.controller) {
+            window.dispatchEvent(new CustomEvent("versionNueva", { detail: reg }));
+          }
+        });
+      });
+
+      // Buscar versión nueva al abrir la app y cada media hora
+      const buscar = () => { if (navigator.onLine) reg.update().catch(() => {}); };
+      setInterval(buscar, 30 * 60 * 1000);
+      document.addEventListener("visibilitychange", () => {
+        if (document.visibilityState === "visible") buscar();
+      });
+
+      let recargando = false;
+      navigator.serviceWorker.addEventListener("controllerchange", () => {
+        if (recargando) return;
+        recargando = true;
+        location.reload();
+      });
+    } catch (e) { /* sin service worker la app sigue funcionando con conexión */ }
+  });
+}
