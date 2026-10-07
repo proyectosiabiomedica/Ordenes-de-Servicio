@@ -1,28 +1,22 @@
-/* Service worker · ot-ia-v39
-   Navegación: red primero, con el index.html de la caché como respaldo sin señal.
-   Todo lo demás: caché primero, guardado SIEMPRE bajo su propia URL.
+/* Service worker · ot-ia-v41
 
-   Corrige una falla seria de v34: el manifest.json se trataba como documento y su
-   contenido se guardaba bajo la llave del index.html, de modo que sin señal la app
-   mostraba el JSON del manifest en lugar de la aplicación. */
-const CACHE = 'ot-ia-v39';
+   Abrir la app: primero la copia guardada, al instante, y la red se consulta en
+   segundo plano para la siguiente vez. Antes era al revés —red primero— y con
+   una red inestable la petición podía quedarse colgada sin fallar: pantalla en
+   blanco aunque hubiera una copia buena en el teléfono.
+
+   La primera apertura no tiene copia, así que depende de la red. Por eso todo
+   viene en un solo archivo: una descarga a un servidor, sin librerías externas. */
+const CACHE = 'ot-ia-v41';
 const BASE = self.registration.scope;
 const PROPIOS = ['index.html', 'manifest.json', 'icon-192.png', 'icon-512.png'];
-// La app ya viene compilada: solo hacen falta React y ReactDOM (antes también
-// Babel, de casi 3 MB, que con datos móviles impedía abrir la primera vez).
-const CDN = [
-  'https://cdnjs.cloudflare.com/ajax/libs/react/18.3.1/umd/react.production.min.js',
-  'https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.3.1/umd/react-dom.production.min.js'
-];
 
 self.addEventListener('install', e => {
-  e.waitUntil(caches.open(CACHE).then(async c => {
-    await Promise.all(PROPIOS.map(f => c.add(BASE + f).catch(() => {})));
-    await Promise.all(CDN.map(u => c.add(new Request(u, { mode: 'no-cors' })).catch(() => {})));
-  }));
+  e.waitUntil(caches.open(CACHE).then(c =>
+    Promise.all(PROPIOS.map(f => c.add(BASE + f).catch(() => {})))));
 });
 
-// La app avisa y, si el ingeniero acepta, pide el relevo con este mensaje
+// La app avisa de la versión nueva y, si el ingeniero acepta, pide el relevo
 self.addEventListener('message', e => {
   if (e.data === 'actualizar') self.skipWaiting();
 });
@@ -38,27 +32,33 @@ self.addEventListener('fetch', e => {
   if (req.method !== 'GET') return;
   if (url.indexOf('script.google') !== -1 || url.indexOf('googleusercontent') !== -1) return;
 
-  // Solo una navegación real puede refrescar la copia del index.html
   if (req.mode === 'navigate') {
-    e.respondWith(
-      fetch(req).then(res => {
-        if (res && res.ok) {
-          const copia = res.clone();
-          caches.open(CACHE).then(c => c.put(BASE + 'index.html', copia)).catch(() => {});
-        }
+    e.respondWith((async () => {
+      const cache = await caches.open(CACHE);
+      const guardada = await cache.match(BASE + 'index.html');
+      const red = fetch(req).then(res => {
+        if (res && res.ok) cache.put(BASE + 'index.html', res.clone());
         return res;
-      }).catch(() => caches.match(BASE + 'index.html').then(r => r || caches.match(BASE)))
-    );
+      });
+      if (guardada) {
+        e.waitUntil(red.catch(() => {}));      // refrescar sin hacer esperar a nadie
+        return guardada;
+      }
+      return red;                               // primera vez: no hay otra opción
+    })());
     return;
   }
 
-  e.respondWith(
-    caches.match(req).then(hit => hit || fetch(req).then(res => {
-      if (res && (res.ok || res.type === 'opaque')) {
-        const copia = res.clone();
-        caches.open(CACHE).then(c => c.put(req, copia)).catch(() => {});
-      }
-      return res;
-    }).catch(() => hit))
-  );
+  // Archivos propios (iconos, manifest): caché primero, cada uno bajo su URL
+  if (url.indexOf(BASE) === 0) {
+    e.respondWith(
+      caches.match(req).then(hit => hit || fetch(req).then(res => {
+        if (res && res.ok) {
+          const copia = res.clone();
+          caches.open(CACHE).then(c => c.put(req, copia)).catch(() => {});
+        }
+        return res;
+      }))
+    );
+  }
 });

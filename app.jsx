@@ -70,7 +70,17 @@ const Api = {
      Camino 2 (respaldo): JSONP con <script>, por si una red bloquea el fetch. */
   viaFetch(params) {
     const q = new URLSearchParams({ ...params, token: CONFIG.TOKEN });
-    return fetch(`${CONFIG.PROXY_URL}?${q.toString()}`, { redirect: "follow" })
+    // Sin tiempo límite, una conexión de datos móviles inestable dejaba la petición
+    // colgada minutos enteros: nunca fallaba, así que nunca se probaba el camino
+    // alterno y la pantalla de acceso se quedaba sin usuarios.
+    const ctl = typeof AbortController !== "undefined" ? new AbortController() : null;
+    const reloj = ctl ? setTimeout(() => ctl.abort(), 15000) : null;
+    return fetch(`${CONFIG.PROXY_URL}?${q.toString()}`,
+      { redirect: "follow", signal: ctl ? ctl.signal : undefined })
+      .finally(() => { if (reloj) clearTimeout(reloj); })
+      .catch(e => {
+        throw new Error(e && e.name === "AbortError" ? "El servidor tardó más de 15 s en responder" : (e.message || "Sin conexión"));
+      })
       .then(async r => {
         const txt = await r.text();
         if (!r.ok) { const e = new Error("El proxy respondió HTTP " + r.status); e.servidor = true; throw e; }
@@ -447,7 +457,7 @@ function FotosCampo({ c, valor, set, obligatorio }) {
 /* ==========================================================
    6. PANTALLAS
    ========================================================== */
-function Identificacion({ onEntrar, usuarios, recargar, cargando }) {
+function Identificacion({ onEntrar, usuarios, recargar, cargando, errorCarga }) {
   const [n, setN] = useState("");
   const [nip, setNip] = useState("");
   const [err, setErr] = useState("");
@@ -482,9 +492,16 @@ function Identificacion({ onEntrar, usuarios, recargar, cargando }) {
           disabled={!n || nip.length !== 4 || validando} onClick={entrar}>
           {validando ? <span className="spin" /> : "Entrar"}</button>
 
-        {!usuarios.length && <button className="btn ghost block" style={{ marginTop: 10 }}
-          onClick={recargar} disabled={cargando}>
-          {cargando ? <span className="spin" /> : "Cargar lista de usuarios"}</button>}
+        {!usuarios.length && <>
+          {cargando
+            ? <div className="note" style={{ marginTop: 12 }}><span className="spin" /> Conectando con el servidor…</div>
+            : errorCarga && <div className="note bad" style={{ marginTop: 12 }}>
+                No se pudo obtener la lista de usuarios.<br />
+                <span style={{ fontFamily: "var(--mono)", fontSize: 12 }}>{errorCarga}</span>
+              </div>}
+          <button className="btn ghost block" style={{ marginTop: 10 }} onClick={recargar} disabled={cargando}>
+            {cargando ? <span className="spin" /> : "Reintentar"}</button>
+        </>}
       </div>
     </div>
   </main>;
@@ -1540,6 +1557,7 @@ function App() {
   const [usuariosAdmin, setUsuariosAdmin] = useState([]);
   const [cargandoUsuarios, setCargandoUsuarios] = useState(false);
   const [errUsuarios, setErrUsuarios] = useState("");
+  const [errUsuariosPub, setErrUsuariosPub] = useState("");
   const [tareas, setTareas] = useState([]);
   const [cargandoTareas, setCargandoTareas] = useState(false);
   const [errTareas, setErrTareas] = useState("");
@@ -1650,14 +1668,16 @@ function App() {
   };
 
   const cargarUsuariosPublicos = useCallback(async () => {
-    setCargandoUsuarios(true);
+    setCargandoUsuarios(true); setErrUsuariosPub("");
     try {
       const d = await Api.get({ action: "usuariosPublicos" });
       setUsuarios(d.usuarios || []);
       await Store.put("meta", { id: "usuariosPublicos", items: d.usuarios, ts: Date.now() });
     } catch (e) {
       const c = await Store.one("meta", "usuariosPublicos");
-      if (c) setUsuarios(c.items || []);
+      if (c && c.items && c.items.length) setUsuarios(c.items);
+      // El motivo queda a la vista: sin él, la pantalla vacía no explica nada
+      else setErrUsuariosPub(e.message || "Sin respuesta");
     }
     setCargandoUsuarios(false);
   }, []);
@@ -2001,7 +2021,7 @@ function App() {
 
   if (!listo) return <div className="center"><span className="spin" /></div>;
   if (!ingeniero) return <Identificacion onEntrar={entrar} usuarios={usuarios}
-    recargar={cargarUsuariosPublicos} cargando={cargandoUsuarios} />;
+    recargar={cargarUsuariosPublicos} cargando={cargandoUsuarios} errorCarga={errUsuariosPub} />;
 
   const noLeidosPorHilo = {};
   hilos.forEach(h => {
