@@ -232,6 +232,65 @@ function nuevaOrden(ingeniero) {
     creada: Date.now(), actualizada: Date.now(), seccion: 0, valores: v };
 }
 
+/* ==========================================================
+   ASIGNACIONES DE LA PLATAFORMA
+   Coordinación asigna equipos desde «Próximos mantenimientos». Cada
+   asignación llega como un borrador con los datos ya puestos. El id del
+   borrador sale del id de la asignación, así nunca se duplica.
+   ========================================================== */
+const idBorradorAsignacion = idAsg => "asg-" + idAsg;
+
+// Etiqueta del campo (como la manda la plataforma) → llave interna
+const CAMPO_POR_ETIQUETA = (() => {
+  const m = {};
+  TODOS.forEach(c => { if (c.m.label) { const k = norm(c.m.label); if (!m[k]) m[k] = c.k; } });
+  return m;
+})();
+
+function tiposDeServicio(texto, tipo, mapa) {
+  const n = norm(texto), out = [];
+  if (/PREVENT/.test(n)) out.push("PREVENTIVO");
+  if (/CORRECT/.test(n)) out.push("CORRECTIVO");
+  if (/CALIBR/.test(n)) out.push("CALIBRACIÓN");
+  if (/EVALUA/.test(n)) out.push("EVALUACIÓN");
+  if (/INSTRUMENT/.test(n)) out.push("INSTRUMENTAL");
+  if (!out.length) out.push(/CALIBR/.test(norm(tipo)) ? "CALIBRACIÓN" : "PREVENTIVO");
+  // Se usa el texto exacto de la opción del formulario, si ya se leyó
+  const ops = (mapa && mapa.tipoServicio && mapa.tipoServicio.opciones) || [];
+  return out.map(o => ops.find(x => norm(x) === norm(o)) || o);
+}
+
+function ordenDesdeAsignacion(a, ingeniero, mapa) {
+  const b = nuevaOrden(nombreDeFormulario(ingeniero, mapa) || ingeniero);
+  const v = b.valores, pre = a.prellenado || {};
+  Object.keys(pre).forEach(et => {
+    const k = CAMPO_POR_ETIQUETA[norm(et)], val = pre[et];
+    if (!k || k === "ingeniero" || val == null || String(val).trim() === "") return;
+    const c = TODOS.find(x => x.k === k);
+    if (k === "tipoServicio") v.tipoServicio = tiposDeServicio(val, a.tipo, mapa);
+    else if (c && ["texto", "tel", "email", "area", "select"].indexOf(c.tipo) > -1) v[k] = String(val).trim();
+  });
+  // Respaldo con las columnas de la asignación
+  [["unidad", a.unidad], ["equipo", a.equipo], ["marca", a.marca], ["modelo", a.modelo],
+   ["serie", a.serie], ["inventario", a.inventario], ["area", a.area]].forEach(([k, val]) => {
+    if (!v[k] && val) v[k] = String(val).trim();
+  });
+  if (!v.tipoServicio.length) v.tipoServicio = tiposDeServicio("", a.tipo, mapa);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(a.fechaProgramada || "")) {
+    v.fechaIni = { ...v.fechaIni, fecha: a.fechaProgramada };
+    v.fechaFin = { ...v.fechaFin, fecha: a.fechaProgramada };
+  }
+  b.id = idBorradorAsignacion(a.id);
+  b.asignacion = { id: a.id, asignadaPor: a.asignadaPor || "", fechaProgramada: a.fechaProgramada || "",
+    notas: a.notas || "", tipo: a.tipo || "", huella: JSON.stringify(v) };
+  return b;
+}
+
+const fechaCorta = iso => {
+  if (!/^\d{4}-\d{2}-\d{2}/.test(iso || "")) return "";
+  return new Date(iso.slice(0, 10) + "T12:00:00").toLocaleDateString("es-MX", { day: "numeric", month: "short" });
+};
+
 /* Resuelve cada campo contra el esquema real del formulario */
 const NO_CAPTURAN = ["control_head", "control_text", "control_button", "control_pagebreak",
   "control_collapse", "control_divider", "control_image"];
@@ -542,6 +601,12 @@ function Formulario({ borrador, guardar, enviar, cancelar, mapa, faltantes }) {
     <p className="lead">Paso {sec + 1} de {SECCIONES.length} · se guarda solo mientras escribe</p>
 
     {!!errs.length && <div className="note bad">Faltan campos obligatorios: {errs.map(e => e.et).join(", ")}.</div>}
+    {borrador.asignacion && sec === 0 && <div className="note">
+      <b>Asignada por coordinación</b>{borrador.asignacion.asignadaPor ? " (" + borrador.asignacion.asignadaPor + ")" : ""}
+      {borrador.asignacion.fechaProgramada ? " para el " + fechaCorta(borrador.asignacion.fechaProgramada) : ""}.
+      Los datos de la unidad y del equipo ya vienen llenos; revíselos contra la placa del equipo.
+      {borrador.asignacion.notas && <><br /><b>Indicaciones:</b> {borrador.asignacion.notas}</>}
+    </div>}
     {sinNombre && <div className="note bad">
       Su usuario no coincide con ningún ingeniero de la lista del formulario, así que la orden
       no se puede enviar a su nombre. Elija uno en el paso de firmas o pida a coordinación que
@@ -610,6 +675,11 @@ function ListaBorradores({ borradores, abrir, borrar, nuevo, mapa, enviar, cola,
               <div className="t">{v.equipo || "Equipo sin capturar"}</div>
               <div className="s">{v.unidad || "Unidad sin capturar"} · {v.inventario || "s/inv"}<br />
               {b.folio ? b.folio + " · " : ""}Editado {fmtFecha(b.actualizada)}</div>
+            {b.asignacion && !b.asignacion.cancelada && <div className="s" style={{ marginTop: 5 }}>
+              <span className="tag asg">Asignada{b.asignacion.fechaProgramada ? " · " + fechaCorta(b.asignacion.fechaProgramada) : ""}</span>
+              {b.asignacion.notas && <> {b.asignacion.notas}</>}</div>}
+            {b.asignacion && b.asignacion.cancelada && <div className="s" style={{ color: "var(--alert)", marginTop: 5 }}>
+              Coordinación canceló esta asignación. Puede eliminar el borrador.</div>}
             {b.errorEnvio && <div className="s" style={{ color: "var(--alert)", marginTop: 5 }}>
               No se envió: {b.errorEnvio}</div>}
             </div>
@@ -1794,7 +1864,8 @@ function App() {
     }
     const fotos = (o.valores.fotos || []).map(f => ({ nombre: f.nombre, dataUrl: f.dataUrl }));
     const campoFotos = mapa.fotos ? mapa.fotos.qid : null;
-    const r = await Api.post({ action: "submit", answers: payload, fotos, campoFotos, cliente: o.id, folio: o.folio });
+    const r = await Api.post({ action: "submit", answers: payload, fotos, campoFotos, cliente: o.id, folio: o.folio,
+      asignacionId: o.asignacion ? o.asignacion.id : "", sesion });
     return r;
   };
 
@@ -1809,7 +1880,9 @@ function App() {
       try {
         const r = await enviarUno(o);
         await Store.del("outbox", o.id);
-        await Store.put("sent", { id: o.id, submissionID: r.submissionID, valores: o.valores, ts: Date.now() });
+        await Store.put("sent", { id: o.id, submissionID: r.submissionID, valores: o.valores, ts: Date.now(),
+          folio: r.folio || o.folio, asignacionId: o.asignacion ? o.asignacion.id : "",
+          asignacionMarcada: !!(r.asignacion && r.asignacion.ok) });
         if (r.aviso) avisos.push(r.aviso);
         ok++;
       } catch (e) {
@@ -1838,7 +1911,7 @@ function App() {
     else if (ok && !fail) avisar(ok === 1 ? "Orden enviada a Jotform" : ok + " órdenes enviadas");
     else if (ok && fail) avisar(`${ok} enviada(s), ${fail} espera(n) señal`, true);
     else if (fail) avisar("Sin señal. La orden espera y se enviará al reconectar.", true);
-  }, [enviando, esquema, mapa, refrescar]);
+  }, [enviando, esquema, mapa, refrescar, sesion]);
 
   useEffect(() => { if (online && listo && esquema) procesarCola(false); }, [online, listo, esquema]);
 
@@ -1974,12 +2047,77 @@ function App() {
     setCargandoAvisos(false);
   }, [ingeniero, sesion]);
 
+  /* Asignaciones de la plataforma → borradores prellenados.
+     · Nueva: se crea el borrador y se marca "Borrador" en la plataforma.
+     · Cancelada: si el borrador no se ha tocado se quita; si ya tiene captura
+       se deja marcado para que el ingeniero decida.
+     · Ya enviada desde este teléfono pero sin marcar (sesión vencida, sin
+       señal): se marca ahora con su folio. */
+  const sincronizando = useRef(false);
+  const sincronizarAsignaciones = useCallback(async () => {
+    if (!sesion || !ingeniero || rol === "visualizador" || !navigator.onLine || sincronizando.current) return;
+    sincronizando.current = true;
+    try {
+      const d = await Api.get({ action: "misAsignaciones", sesion });
+      const lista = d.asignaciones || [];
+      const [drafts, outbox, sent] = await Promise.all([Store.all("drafts"), Store.all("outbox"), Store.all("sent")]);
+      const desc = await Store.one("meta", "asignacionesDescartadas");
+      const descartadas = new Set((desc && desc.ids) || []);
+      const marcar = (id, estado, folio) => Api.post({ action: "marcarAsignacion", sesion, id, estado, folio }).catch(() => null);
+      let nuevas = 0, quitadas = 0, cambios = false;
+      for (const a of lista) {
+        const enDraft = drafts.find(b => b.asignacion && b.asignacion.id === a.id);
+        const enCola = outbox.find(b => b.asignacion && b.asignacion.id === a.id);
+        const enviada = sent.find(x => x.asignacionId === a.id);
+        if (a.estado === "Cancelada") {
+          if (enDraft && !enDraft.asignacion.cancelada) {
+            if (JSON.stringify(enDraft.valores) === enDraft.asignacion.huella) { await Store.del("drafts", enDraft.id); quitadas++; }
+            else await Store.put("drafts", { ...enDraft, asignacion: { ...enDraft.asignacion, cancelada: true } });
+            cambios = true;
+          }
+          continue;
+        }
+        if (enviada) {   // ya se mandó desde aquí: solo falta avisarle a la plataforma
+          const r = await marcar(a.id, "Enviada", enviada.folio);
+          if (r && r.ok) await Store.put("sent", { ...enviada, asignacionMarcada: true });
+          continue;
+        }
+        if (enCola) continue;
+        if (enDraft) { if (a.estado === "Asignada") await marcar(a.id, "Borrador"); continue; }
+        if (descartadas.has(a.id)) continue;
+        await Store.put("drafts", ordenDesdeAsignacion(a, ingeniero, mapa));
+        nuevas++; cambios = true;
+        await marcar(a.id, "Borrador");
+      }
+      if (cambios) await refrescar();
+      if (nuevas) avisar(nuevas === 1 ? "Tiene 1 orden asignada nueva en Borradores" : "Tiene " + nuevas + " órdenes asignadas nuevas en Borradores");
+      else if (quitadas) avisar(quitadas === 1 ? "Coordinación canceló 1 asignación; se quitó su borrador" : "Coordinación canceló " + quitadas + " asignaciones", true);
+    } catch (e) { /* sin respuesta: se intenta en la siguiente revisión */ }
+    sincronizando.current = false;
+  }, [sesion, ingeniero, rol, mapa, refrescar]);
+
+  useEffect(() => { if (listo && sesion && ingeniero) sincronizarAsignaciones(); }, [listo, sesion, ingeniero]);
+
+  const borrarBorrador = async id => {
+    const b = await Store.one("drafts", id);
+    if (b && b.asignacion && !b.asignacion.cancelada &&
+        !window.confirm("Esta orden se la asignó coordinación. Si la elimina no volverá a aparecer en este teléfono, " +
+          "pero la asignación seguirá abierta en la plataforma. ¿Eliminarla?")) return;
+    await Store.del("drafts", id);
+    if (b && b.asignacion) {
+      const desc = await Store.one("meta", "asignacionesDescartadas");
+      const ids = ((desc && desc.ids) || []).filter(x => x !== b.asignacion.id).concat(b.asignacion.id).slice(-300);
+      await Store.put("meta", { id: "asignacionesDescartadas", ids });
+    }
+    await refrescar(); avisar("Borrador eliminado");
+  };
+
   // Revisión periódica: relee el formulario cada 10 minutos y al volver a la app.
   // Así el mapeo de campos y el estado del proxy se verifican antes de que un
   // ingeniero intente enviar, y no en el momento de enviar.
   useEffect(() => {
     if (!listo || !ingeniero) return;
-    const revisar = () => { if (navigator.onLine) { leerEsquema(true); cargarAvisos(); } };
+    const revisar = () => { if (navigator.onLine) { leerEsquema(true); cargarAvisos(); sincronizarAsignaciones(); } };
     const reloj = setInterval(revisar, 10 * 60 * 1000);
     const alVolver = () => { if (document.visibilityState === "visible") revisar(); };
     document.addEventListener("visibilitychange", alVolver);
@@ -1989,7 +2127,7 @@ function App() {
       document.removeEventListener("visibilitychange", alVolver);
       window.removeEventListener("online", revisar);
     };
-  }, [listo, ingeniero, leerEsquema, cargarAvisos]);
+  }, [listo, ingeniero, leerEsquema, cargarAvisos, sincronizarAsignaciones]);
 
   // El chat se consulta solo mientras su pestaña está abierta, cada 25 segundos.
   // Un sondeo permanente agotaría la cuota diaria de Apps Script y dejaría sin
@@ -2087,7 +2225,7 @@ function App() {
           devolver={async id => { const o = await Store.one("outbox", id); await Store.del("outbox", id); if (o) await Store.put("drafts", { ...o, actualizada: Date.now() }); await refrescar(); avisar("Regresó a borradores"); }}
           abrir={b => setEditando(ajustarIngeniero(b))}
           nuevo={() => setEditando(nuevaOrden(nombreDeFormulario(ingeniero, mapa)))}
-          borrar={async id => { await Store.del("drafts", id); await refrescar(); avisar("Borrador eliminado"); }} />
+          borrar={borrarBorrador} />
       : tabActual === "envios" ? <MisEnvios ingeniero={ingeniero} enviados={enviados} cargar={cargarEnvios} cargando={cargandoEnvios} error={errEnvios} />
       : tabActual === "avisos" ? <Avisos ingeniero={ingeniero} avisos={avisos} cargar={cargarAvisos}
           cargando={cargandoAvisos} error={errAvisos} esCoordinador={esCoordinador}

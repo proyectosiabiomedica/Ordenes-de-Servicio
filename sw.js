@@ -1,4 +1,4 @@
-/* Service worker · ot-ia-v41
+/* Service worker · ot-ia-v42
 
    Abrir la app: primero la copia guardada, al instante, y la red se consulta en
    segundo plano para la siguiente vez. Antes era al revés —red primero— y con
@@ -7,7 +7,7 @@
 
    La primera apertura no tiene copia, así que depende de la red. Por eso todo
    viene en un solo archivo: una descarga a un servidor, sin librerías externas. */
-const CACHE = 'ot-ia-v41';
+const CACHE = 'ot-ia-v42';
 const BASE = self.registration.scope;
 const PROPIOS = ['index.html', 'manifest.json', 'icon-192.png', 'icon-512.png'];
 
