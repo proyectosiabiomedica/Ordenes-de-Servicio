@@ -19,7 +19,10 @@ const Store = (() => {
       });
       req.onsuccess = () => res(req.result);
       req.onerror = () => res(null);
-      setTimeout(() => res(null), 2500);
+      // 2.5 s era poco para la primera apertura en un teléfono lento: caía a
+      // localStorage y los borradores quedaban en un almacén distinto al de la
+      // siguiente apertura.
+      setTimeout(() => res(null), 6000);
     });
   }
   async function init() {
@@ -57,7 +60,13 @@ const Store = (() => {
       if (modo === "localstorage") return lsAll(s);
       return Object.values(mem[s]);
     },
-    async one(s, id) { return (await this.all(s)).find(x => x.id === id) || null; }
+    // Lectura directa por clave: antes se leía TODA la tienda (esquema, historial de
+    // envíos, avisos…) para quedarse con un solo registro, unas diez veces al abrir.
+    async one(s, id) {
+      if (modo === "indexeddb") return new Promise(res => { const r = tx(s, "readonly").get(id); r.onsuccess = () => res(r.result || null); r.onerror = () => res(null); });
+      if (modo === "localstorage") { try { return JSON.parse(localStorage.getItem(lsKey(s, id))); } catch (e) { return null; } }
+      return mem[s][id] || null;
+    }
   };
 })();
 
@@ -68,18 +77,20 @@ const Api = {
   /* Camino 1: fetch directo. Apps Script permite CORS en la respuesta final,
      así que este funciona desde GitHub Pages y devuelve el error HTTP real.
      Camino 2 (respaldo): JSONP con <script>, por si una red bloquea el fetch. */
-  viaFetch(params) {
+  viaFetch(params, limite) {
     const q = new URLSearchParams({ ...params, token: CONFIG.TOKEN });
     // Sin tiempo límite, una conexión de datos móviles inestable dejaba la petición
-    // colgada minutos enteros: nunca fallaba, así que nunca se probaba el camino
-    // alterno y la pantalla de acceso se quedaba sin usuarios.
+    // colgada minutos enteros. Pero 15 s era muy poco: Apps Script "en frío" más la
+    // latencia de datos móviles pasa de 15 s con facilidad, y abortar ahí tiraba una
+    // respuesta que venía en camino para empezar otra desde cero (Rev.42).
     const ctl = typeof AbortController !== "undefined" ? new AbortController() : null;
-    const reloj = ctl ? setTimeout(() => ctl.abort(), 15000) : null;
+    const seg = Math.round((limite || 45000) / 1000);
+    const reloj = ctl ? setTimeout(() => ctl.abort(), limite || 45000) : null;
     return fetch(`${CONFIG.PROXY_URL}?${q.toString()}`,
       { redirect: "follow", signal: ctl ? ctl.signal : undefined })
       .finally(() => { if (reloj) clearTimeout(reloj); })
       .catch(e => {
-        throw new Error(e && e.name === "AbortError" ? "El servidor tardó más de 15 s en responder" : (e.message || "Sin conexión"));
+        throw new Error(e && e.name === "AbortError" ? "El servidor tardó más de " + seg + " s en responder" : (e.message || "Sin conexión"));
       })
       .then(async r => {
         const txt = await r.text();
@@ -91,28 +102,52 @@ const Api = {
         return d;
       });
   },
-  viaJsonp(params) {
+  viaJsonp(params, limite) {
     return new Promise((res, rej) => {
       const cb = "jp_" + Math.random().toString(36).slice(2);
       const q = new URLSearchParams({ ...params, token: CONFIG.TOKEN, callback: cb });
       const s = document.createElement("script");
-      const limpiar = () => { delete window[cb]; s.remove(); clearTimeout(t); };
-      const t = setTimeout(() => { limpiar(); rej(new Error("El proxy no respondió a tiempo")); }, 25000);
-      window[cb] = d => { limpiar(); (d && d.ok === false) ? rej(new Error(d.error || "Error del servidor")) : res(d); };
+      // Si llega tarde, la función sigue existiendo y no truena con "jp_ is not defined"
+      const limpiar = () => { window[cb] = () => {}; s.remove(); clearTimeout(t); };
+      const t = setTimeout(() => { limpiar(); rej(new Error("El proxy no respondió a tiempo")); }, limite || 40000);
+      window[cb] = d => {
+        limpiar();
+        if (d && d.ok === false) { const e = new Error(d.error || "Error del servidor"); e.servidor = true; rej(e); }
+        else res(d);
+      };
       s.onerror = () => { limpiar(); rej(new Error("El navegador no pudo cargar el proxy")); };
       s.src = `${CONFIG.PROXY_URL}?${q.toString()}`;
       document.head.appendChild(s);
     });
   },
-  async get(params) {
-    if (!navigator.onLine) throw new Error("Sin señal. Se reintentará al reconectar.");
-    try {
-      return await Api.viaFetch(params);
-    } catch (e) {
-      if (e.servidor) throw e;              // el proxy contestó: no tiene caso reintentar
-      try { return await Api.viaJsonp(params); }
-      catch (e2) { throw new Error(e2.message + " · fetch: " + e.message); }
-    }
+  /* Lecturas: el fetch tiene hasta 45 s. Si a los 12 s no ha contestado, se lanza
+     el JSONP EN PARALELO —sin abortar el fetch— y gana el primero que responda.
+     Antes el fetch se cortaba a los 15 s y el JSONP empezaba de cero: con datos
+     móviles la lista de usuarios tardaba 40 s o no llegaba nunca.
+     El login no va en paralelo (crearía dos sesiones): espera al fetch y solo usa
+     JSONP si la red falla de verdad. */
+  get(params, opciones) {
+    const paralelo = !(opciones && opciones.paralelo === false);
+    if (!navigator.onLine) return Promise.reject(new Error("Sin señal. Se reintentará al reconectar."));
+    return new Promise((res, rej) => {
+      let hecho = false, jsonp = false, vivos = 1, errFetch = null, reloj = null;
+      const ganar = d => { if (hecho) return; hecho = true; clearTimeout(reloj); res(d); };
+      const perder = e => {
+        if (hecho) return;
+        if (e.servidor) { hecho = true; clearTimeout(reloj); return rej(e); } // el proxy contestó
+        if (--vivos > 0) return;
+        if (!jsonp) return lanzar();
+        hecho = true; clearTimeout(reloj);
+        rej(new Error(e.message + (errFetch && e !== errFetch ? " · fetch: " + errFetch.message : "")));
+      };
+      const lanzar = () => {
+        if (jsonp || hecho) return;
+        jsonp = true; vivos++; clearTimeout(reloj);
+        Api.viaJsonp(params).then(ganar, perder);
+      };
+      Api.viaFetch(params).then(ganar, e => { errFetch = e; perder(e); });
+      if (paralelo) reloj = setTimeout(lanzar, 12000);
+    });
   },
   async post(body) {
     const r = await fetch(CONFIG.PROXY_URL, {
@@ -531,6 +566,7 @@ function Identificacion({ onEntrar, usuarios, recargar, cargando, errorCarga }) 
 
   return <main>
     <div className="center">
+      <img src="icon-192.png" alt="" className="logo-acceso" onError={e => { e.currentTarget.style.display = "none"; }} />
       <div style={{ letterSpacing: ".2em", fontSize: 12, color: "var(--muted)", textTransform: "uppercase" }}>Ingenieros Asociados</div>
       <h1 style={{ fontSize: 26, margin: 0, letterSpacing: "-.01em" }}>Orden de Trabajo</h1>
       <p className="lead" style={{ maxWidth: 320 }}>Elija su usuario y escriba su NIP de 4 dígitos.</p>
@@ -538,7 +574,11 @@ function Identificacion({ onEntrar, usuarios, recargar, cargando, errorCarga }) 
       <div style={{ width: "100%", maxWidth: 380 }}>
         <select value={n} onChange={e => { setN(e.target.value); setErr(""); }}>
           <option value="">Seleccione usuario</option>
-          {usuarios.map(u => <option key={u.nombre} value={u.nombre}>{u.nombre}</option>)}
+          {/* Primera apertura sin lista guardada: se muestran los ingenieros conocidos
+              mientras responde el servidor, para no dejar la pantalla vacía. El NIP
+              lo valida el servidor de todos modos. */}
+          {(usuarios.length ? usuarios : INGENIEROS.map(nombre => ({ nombre })))
+            .map(u => <option key={u.nombre} value={u.nombre}>{u.nombre}</option>)}
         </select>
 
         <input type="password" inputMode="numeric" maxLength={4} value={nip} className="nip"
@@ -553,7 +593,7 @@ function Identificacion({ onEntrar, usuarios, recargar, cargando, errorCarga }) 
 
         {!usuarios.length && <>
           {cargando
-            ? <div className="note" style={{ marginTop: 12 }}><span className="spin" /> Conectando con el servidor…</div>
+            ? <div className="note" style={{ marginTop: 12 }}><span className="spin" /> Conectando con el servidor… con datos móviles la primera vez puede tardar hasta un minuto.</div>
             : errorCarga && <div className="note bad" style={{ marginTop: 12 }}>
                 No se pudo obtener la lista de usuarios.<br />
                 <span style={{ fontFamily: "var(--mono)", fontSize: 12 }}>{errorCarga}</span>
@@ -1700,9 +1740,11 @@ function App() {
       }
       await refrescar();
       setListo(true);
-      leerEsquema(true);
-      if (!ses0 || !ses0.token) cargarUsuariosPublicos();
-      else confirmarSesion(ses0.token);
+      // Sin sesión, lo único que hace falta para entrar es la lista de usuarios:
+      // se pide sola y el formulario (que tarda más, consulta Jotform) va después,
+      // para no competir por la misma conexión de datos móviles.
+      if (!ses0 || !ses0.token) cargarUsuariosPublicos().finally(() => leerEsquema(true));
+      else { leerEsquema(true); confirmarSesion(ses0.token); }
     })();
     const nueva = e => setVersionNueva(e.detail);
     window.addEventListener("versionNueva", nueva);
@@ -1752,9 +1794,24 @@ function App() {
     setCargandoUsuarios(false);
   }, []);
 
+  // En la pantalla de acceso, si la lista no llegó, se vuelve a pedir sola al
+  // recuperar señal o al regresar a la app (antes solo con el botón Reintentar).
+  useEffect(() => {
+    if (!listo || ingeniero || !errUsuariosPub) return;
+    const otraVez = () => { if (navigator.onLine && document.visibilityState === "visible") cargarUsuariosPublicos(); };
+    const reloj = setTimeout(otraVez, 8000);
+    window.addEventListener("online", otraVez);
+    document.addEventListener("visibilitychange", otraVez);
+    return () => {
+      clearTimeout(reloj);
+      window.removeEventListener("online", otraVez);
+      document.removeEventListener("visibilitychange", otraVez);
+    };
+  }, [listo, ingeniero, errUsuariosPub, cargarUsuariosPublicos]);
+
   const entrar = async (nombre, nip) => {
     try {
-      const d = await Api.get({ action: "login", nombre, nip });
+      const d = await Api.get({ action: "login", nombre, nip }, { paralelo: false });
       await Store.put("meta", { id: "sesion", token: d.sesion, nombre: d.nombre, rol: d.rol, ts: Date.now() });
       await Store.put("meta", { id: "ingeniero", valor: d.nombre });
       setSesion(d.sesion); setRol(d.rol); setIngeniero(d.nombre);
@@ -2258,8 +2315,10 @@ function App() {
       <button onClick={() => {
         // Si hay órdenes a medias se avisa: la recarga no las borra, pero
         // conviene que el ingeniero lo sepa antes de que la pantalla cambie.
-        if (versionNueva.waiting) versionNueva.waiting.postMessage("actualizar");
-        else location.reload();
+        if (versionNueva.waiting) {
+          window.__pidioActualizar = true;
+          versionNueva.waiting.postMessage("actualizar");
+        } else location.reload();
       }}>Actualizar</button>
       <button className="x" onClick={() => setVersionNueva(null)}>Después</button>
     </div>}
@@ -2287,8 +2346,16 @@ ReactDOM.createRoot(document.getElementById("root")).render(<App />);
    en lugar de recargar solo. Recargar sin permiso en medio de una captura sería
    peor que quedarse una hora con la versión anterior. */
 if ("serviceWorker" in navigator && location.protocol === "https:") {
-  window.addEventListener("load", async () => {
+  // ¿Ya había una versión instalada controlando esta página? En la primera
+  // apertura no la hay, y el service worker nuevo toma el control a los pocos
+  // segundos: eso disparaba "controllerchange" y la app se RECARGABA SOLA en
+  // medio de la primera carga, tirando las peticiones en curso (Rev.42).
+  const habiaVersion = !!navigator.serviceWorker.controller;
+  window.addEventListener("load", () => setTimeout(async () => {
     try {
+      // Se registra unos segundos después de abrir: en la primera visita el
+      // service worker descarga de nuevo la app para guardarla, y con datos
+      // móviles eso competía con la lista de usuarios.
       const reg = await navigator.serviceWorker.register("sw.js");
 
       const revisar = () => {
@@ -2316,10 +2383,12 @@ if ("serviceWorker" in navigator && location.protocol === "https:") {
 
       let recargando = false;
       navigator.serviceWorker.addEventListener("controllerchange", () => {
-        if (recargando) return;
+        // Primera instalación: nada que recargar. Sí se recarga si el ingeniero
+        // tocó "Actualizar" (aunque esta pestaña haya nacido sin versión previa).
+        if (recargando || !(habiaVersion || window.__pidioActualizar)) return;
         recargando = true;
         location.reload();
       });
     } catch (e) { /* sin service worker la app sigue funcionando con conexión */ }
-  });
+  }, 4000));
 }

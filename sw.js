@@ -1,4 +1,4 @@
-/* Service worker · ot-ia-v42
+/* Service worker · ot-ia-v43
 
    Abrir la app: primero la copia guardada, al instante, y la red se consulta en
    segundo plano para la siguiente vez. Antes era al revés —red primero— y con
@@ -6,8 +6,12 @@
    blanco aunque hubiera una copia buena en el teléfono.
 
    La primera apertura no tiene copia, así que depende de la red. Por eso todo
-   viene en un solo archivo: una descarga a un servidor, sin librerías externas. */
-const CACHE = 'ot-ia-v42';
+   viene en un solo archivo: una descarga a un servidor, sin librerías externas.
+
+   v43: la página ya no se recarga sola cuando este service worker se instala por
+   primera vez (eso cortaba la carga inicial con datos móviles), y el registro se
+   hace unos segundos después de abrir para no competir por la conexión. */
+const CACHE = 'ot-ia-v43';
 const BASE = self.registration.scope;
 const PROPIOS = ['index.html', 'manifest.json', 'icon-192.png', 'icon-512.png'];
 

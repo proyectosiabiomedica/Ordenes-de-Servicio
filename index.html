@@ -63,7 +63,7 @@ h2{font-size:13px;letter-spacing:.14em;text-transform:uppercase;color:var(--ambe
 label.f{display:block;margin-bottom:14px}
 label.f>span.lb{display:block;font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin-bottom:6px;font-weight:600}
 label.f>span.lb em{font-style:normal;color:var(--amber)}
-input[type=text],input[type=tel],input[type=email],input[type=date],input[type=time],input[type=number],select,textarea{
+input[type=text],input[type=tel],input[type=email],input[type=password],input[type=date],input[type=time],input[type=number],select,textarea{
   width:100%;background:var(--panel-2);border:1px solid var(--line);border-radius:8px;padding:11px 12px;color:var(--text);appearance:none}
 textarea{min-height:96px;resize:vertical;line-height:1.45}
 select{background-image:linear-gradient(45deg,transparent 50%,var(--muted) 50%),linear-gradient(135deg,var(--muted) 50%,transparent 50%);background-position:calc(100% - 18px) 50%,calc(100% - 13px) 50%;background-size:5px 5px,5px 5px;background-repeat:no-repeat;padding-right:36px}
@@ -199,6 +199,7 @@ input.nip{width:100%;text-align:center;font-family:var(--mono);font-size:20px;le
   text-indent:.45em;padding:13px 12px}
 .spin{display:inline-block;width:14px;height:14px;border:2px solid rgba(255,255,255,.25);border-top-color:var(--amber);border-radius:50%;animation:sp .7s linear infinite}
 @keyframes sp{to{transform:rotate(360deg)}}
+.logo-acceso{width:64px;height:64px;border-radius:14px;background:#fff;padding:6px;margin-bottom:4px}
 .center{display:flex;align-items:center;justify-content:center;min-height:60vh;flex-direction:column;gap:14px;text-align:center;padding:20px}
 </style>
 </head>
@@ -250,7 +251,7 @@ window.CONFIG = {
   // Token compartido: debe ser idéntico al del Apps Script
   TOKEN: "aiiPlCWrNHmMcqLQRrj9RK2QVnqfxSMzPYISzJ88dXNjB8Ys",
   FORM_ID: "260445478825062",
-  BUILD: "Rev.41"
+  BUILD: "Rev.42"
 };
 </script>
 
@@ -601,7 +602,10 @@ const Store = (() => {
       });
       req.onsuccess = () => res(req.result);
       req.onerror = () => res(null);
-      setTimeout(() => res(null), 2500);
+      // 2.5 s era poco para la primera apertura en un teléfono lento: caía a
+      // localStorage y los borradores quedaban en un almacén distinto al de la
+      // siguiente apertura.
+      setTimeout(() => res(null), 6000);
     });
   }
   async function init() {
@@ -674,8 +678,22 @@ const Store = (() => {
       if (modo === "localstorage") return lsAll(s);
       return Object.values(mem[s]);
     },
+    // Lectura directa por clave: antes se leía TODA la tienda (esquema, historial de
+    // envíos, avisos…) para quedarse con un solo registro, unas diez veces al abrir.
     async one(s, id) {
-      return (await this.all(s)).find(x => x.id === id) || null;
+      if (modo === "indexeddb") return new Promise(res => {
+        const r = tx(s, "readonly").get(id);
+        r.onsuccess = () => res(r.result || null);
+        r.onerror = () => res(null);
+      });
+      if (modo === "localstorage") {
+        try {
+          return JSON.parse(localStorage.getItem(lsKey(s, id)));
+        } catch (e) {
+          return null;
+        }
+      }
+      return mem[s][id] || null;
     }
   };
 })();
@@ -687,23 +705,25 @@ const Api = {
   /* Camino 1: fetch directo. Apps Script permite CORS en la respuesta final,
      así que este funciona desde GitHub Pages y devuelve el error HTTP real.
      Camino 2 (respaldo): JSONP con <script>, por si una red bloquea el fetch. */
-  viaFetch(params) {
+  viaFetch(params, limite) {
     const q = new URLSearchParams({
       ...params,
       token: CONFIG.TOKEN
     });
     // Sin tiempo límite, una conexión de datos móviles inestable dejaba la petición
-    // colgada minutos enteros: nunca fallaba, así que nunca se probaba el camino
-    // alterno y la pantalla de acceso se quedaba sin usuarios.
+    // colgada minutos enteros. Pero 15 s era muy poco: Apps Script "en frío" más la
+    // latencia de datos móviles pasa de 15 s con facilidad, y abortar ahí tiraba una
+    // respuesta que venía en camino para empezar otra desde cero (Rev.42).
     const ctl = typeof AbortController !== "undefined" ? new AbortController() : null;
-    const reloj = ctl ? setTimeout(() => ctl.abort(), 15000) : null;
+    const seg = Math.round((limite || 45000) / 1000);
+    const reloj = ctl ? setTimeout(() => ctl.abort(), limite || 45000) : null;
     return fetch(`${CONFIG.PROXY_URL}?${q.toString()}`, {
       redirect: "follow",
       signal: ctl ? ctl.signal : undefined
     }).finally(() => {
       if (reloj) clearTimeout(reloj);
     }).catch(e => {
-      throw new Error(e && e.name === "AbortError" ? "El servidor tardó más de 15 s en responder" : e.message || "Sin conexión");
+      throw new Error(e && e.name === "AbortError" ? "El servidor tardó más de " + seg + " s en responder" : e.message || "Sin conexión");
     }).then(async r => {
       const txt = await r.text();
       if (!r.ok) {
@@ -727,7 +747,7 @@ const Api = {
       return d;
     });
   },
-  viaJsonp(params) {
+  viaJsonp(params, limite) {
     return new Promise((res, rej) => {
       const cb = "jp_" + Math.random().toString(36).slice(2);
       const q = new URLSearchParams({
@@ -736,18 +756,23 @@ const Api = {
         callback: cb
       });
       const s = document.createElement("script");
+      // Si llega tarde, la función sigue existiendo y no truena con "jp_ is not defined"
       const limpiar = () => {
-        delete window[cb];
+        window[cb] = () => {};
         s.remove();
         clearTimeout(t);
       };
       const t = setTimeout(() => {
         limpiar();
         rej(new Error("El proxy no respondió a tiempo"));
-      }, 25000);
+      }, limite || 40000);
       window[cb] = d => {
         limpiar();
-        d && d.ok === false ? rej(new Error(d.error || "Error del servidor")) : res(d);
+        if (d && d.ok === false) {
+          const e = new Error(d.error || "Error del servidor");
+          e.servidor = true;
+          rej(e);
+        } else res(d);
       };
       s.onerror = () => {
         limpiar();
@@ -757,18 +782,53 @@ const Api = {
       document.head.appendChild(s);
     });
   },
-  async get(params) {
-    if (!navigator.onLine) throw new Error("Sin señal. Se reintentará al reconectar.");
-    try {
-      return await Api.viaFetch(params);
-    } catch (e) {
-      if (e.servidor) throw e; // el proxy contestó: no tiene caso reintentar
-      try {
-        return await Api.viaJsonp(params);
-      } catch (e2) {
-        throw new Error(e2.message + " · fetch: " + e.message);
-      }
-    }
+  /* Lecturas: el fetch tiene hasta 45 s. Si a los 12 s no ha contestado, se lanza
+     el JSONP EN PARALELO —sin abortar el fetch— y gana el primero que responda.
+     Antes el fetch se cortaba a los 15 s y el JSONP empezaba de cero: con datos
+     móviles la lista de usuarios tardaba 40 s o no llegaba nunca.
+     El login no va en paralelo (crearía dos sesiones): espera al fetch y solo usa
+     JSONP si la red falla de verdad. */
+  get(params, opciones) {
+    const paralelo = !(opciones && opciones.paralelo === false);
+    if (!navigator.onLine) return Promise.reject(new Error("Sin señal. Se reintentará al reconectar."));
+    return new Promise((res, rej) => {
+      let hecho = false,
+        jsonp = false,
+        vivos = 1,
+        errFetch = null,
+        reloj = null;
+      const ganar = d => {
+        if (hecho) return;
+        hecho = true;
+        clearTimeout(reloj);
+        res(d);
+      };
+      const perder = e => {
+        if (hecho) return;
+        if (e.servidor) {
+          hecho = true;
+          clearTimeout(reloj);
+          return rej(e);
+        } // el proxy contestó
+        if (--vivos > 0) return;
+        if (!jsonp) return lanzar();
+        hecho = true;
+        clearTimeout(reloj);
+        rej(new Error(e.message + (errFetch && e !== errFetch ? " · fetch: " + errFetch.message : "")));
+      };
+      const lanzar = () => {
+        if (jsonp || hecho) return;
+        jsonp = true;
+        vivos++;
+        clearTimeout(reloj);
+        Api.viaJsonp(params).then(ganar, perder);
+      };
+      Api.viaFetch(params).then(ganar, e => {
+        errFetch = e;
+        perder(e);
+      });
+      if (paralelo) reloj = setTimeout(lanzar, 12000);
+    });
   },
   async post(body) {
     const r = await fetch(CONFIG.PROXY_URL, {
@@ -1509,7 +1569,7 @@ function Campo({
         fontSize: 12,
         color: "var(--alert)"
       }
-    }, "\"", valor, "\" ya no es una opci\xF3n v\xE1lida del formulario. Elija una de la lista."));
+    }, "\"", valor, "\" ya no es una opción válida del formulario. Elija una de la lista."));
   }
   if (c.tipo === "datetime") {
     const v = valor || {
@@ -1586,7 +1646,7 @@ function Campo({
       obligatorio: obligatorio
     }), /*#__PURE__*/React.createElement("table", {
       className: "med"
-    }, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("th", null, "Medici\xF3n"), /*#__PURE__*/React.createElement("th", null, "Valor programado"), /*#__PURE__*/React.createElement("th", null, "Valor desplegado"), /*#__PURE__*/React.createElement("th", null, "Valor medido"), /*#__PURE__*/React.createElement("th", null))), /*#__PURE__*/React.createElement("tbody", null, filas.map((f, i) => /*#__PURE__*/React.createElement("tr", {
+    }, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("th", null, "Medición"), /*#__PURE__*/React.createElement("th", null, "Valor programado"), /*#__PURE__*/React.createElement("th", null, "Valor desplegado"), /*#__PURE__*/React.createElement("th", null, "Valor medido"), /*#__PURE__*/React.createElement("th", null))), /*#__PURE__*/React.createElement("tbody", null, filas.map((f, i) => /*#__PURE__*/React.createElement("tr", {
       key: i
     }, /*#__PURE__*/React.createElement("td", null, /*#__PURE__*/React.createElement("input", {
       type: "text",
@@ -1611,7 +1671,7 @@ function Campo({
         padding: "8px 10px"
       },
       onClick: () => set(filas.filter((_, j) => j !== i))
-    }, "\xD7")))))), /*#__PURE__*/React.createElement("button", {
+    }, "×")))))), /*#__PURE__*/React.createElement("button", {
       type: "button",
       className: "btn ghost",
       style: {
@@ -1623,7 +1683,7 @@ function Campo({
         desp: "",
         med: ""
       }])
-    }, "+ Agregar medici\xF3n"));
+    }, "+ Agregar medición"));
   }
   if (c.tipo === "firma") return /*#__PURE__*/React.createElement(FirmaCampo, {
     c: c,
@@ -1722,7 +1782,7 @@ function FirmaCampo({
     onPointerLeave: arriba
   }), !valor && /*#__PURE__*/React.createElement("div", {
     className: "sighint"
-  }, "Firme aqu\xED")), /*#__PURE__*/React.createElement("button", {
+  }, "Firme aquí")), /*#__PURE__*/React.createElement("button", {
     type: "button",
     className: "btn ghost",
     style: {
@@ -1788,7 +1848,7 @@ function FotosCampo({
   }), /*#__PURE__*/React.createElement("button", {
     type: "button",
     onClick: () => set(fotos.filter(x => x.id !== f.id))
-  }, "\xD7")))));
+  }, "×")))));
 }
 
 /* ==========================================================
@@ -1817,7 +1877,14 @@ function Identificacion({
   };
   return /*#__PURE__*/React.createElement("main", null, /*#__PURE__*/React.createElement("div", {
     className: "center"
-  }, /*#__PURE__*/React.createElement("div", {
+  }, /*#__PURE__*/React.createElement("img", {
+    src: "icon-192.png",
+    alt: "",
+    className: "logo-acceso",
+    onError: e => {
+      e.currentTarget.style.display = "none";
+    }
+  }), /*#__PURE__*/React.createElement("div", {
     style: {
       letterSpacing: ".2em",
       fontSize: 12,
@@ -1835,7 +1902,7 @@ function Identificacion({
     style: {
       maxWidth: 320
     }
-  }, "Elija su usuario y escriba su NIP de 4 d\xEDgitos."), /*#__PURE__*/React.createElement("div", {
+  }, "Elija su usuario y escriba su NIP de 4 dígitos."), /*#__PURE__*/React.createElement("div", {
     style: {
       width: "100%",
       maxWidth: 380
@@ -1848,7 +1915,9 @@ function Identificacion({
     }
   }, /*#__PURE__*/React.createElement("option", {
     value: ""
-  }, "Seleccione usuario"), usuarios.map(u => /*#__PURE__*/React.createElement("option", {
+  }, "Seleccione usuario"), (usuarios.length ? usuarios : INGENIEROS.map(nombre => ({
+    nombre
+  }))).map(u => /*#__PURE__*/React.createElement("option", {
     key: u.nombre,
     value: u.nombre
   }, u.nombre))), /*#__PURE__*/React.createElement("input", {
@@ -1858,7 +1927,7 @@ function Identificacion({
     value: nip,
     className: "nip",
     onChange: e => setNip(e.target.value.replace(/\D/g, "")),
-    placeholder: "\u2022 \u2022 \u2022 \u2022",
+    placeholder: "• • • •",
     style: {
       marginTop: 12
     }
@@ -1883,7 +1952,7 @@ function Identificacion({
     }
   }, /*#__PURE__*/React.createElement("span", {
     className: "spin"
-  }), " Conectando con el servidor\u2026") : errorCarga && /*#__PURE__*/React.createElement("div", {
+  }), " Conectando con el servidor… con datos móviles la primera vez puede tardar hasta un minuto.") : errorCarga && /*#__PURE__*/React.createElement("div", {
     className: "note bad",
     style: {
       marginTop: 12
@@ -1967,15 +2036,15 @@ function Formulario({
     className: i < sec ? "done" : i === sec ? "now" : ""
   }))), /*#__PURE__*/React.createElement("h2", null, S.titulo), /*#__PURE__*/React.createElement("p", {
     className: "lead"
-  }, "Paso ", sec + 1, " de ", SECCIONES.length, " \xB7 se guarda solo mientras escribe"), !!errs.length && /*#__PURE__*/React.createElement("div", {
+  }, "Paso ", sec + 1, " de ", SECCIONES.length, " · se guarda solo mientras escribe"), !!errs.length && /*#__PURE__*/React.createElement("div", {
     className: "note bad"
   }, "Faltan campos obligatorios: ", errs.map(e => e.et).join(", "), "."), borrador.asignacion && sec === 0 && /*#__PURE__*/React.createElement("div", {
     className: "note"
-  }, /*#__PURE__*/React.createElement("b", null, "Asignada por coordinaci\xF3n"), borrador.asignacion.asignadaPor ? " (" + borrador.asignacion.asignadaPor + ")" : "", borrador.asignacion.fechaProgramada ? " para el " + fechaCorta(borrador.asignacion.fechaProgramada) : "", ". Los datos de la unidad y del equipo ya vienen llenos; rev\xEDselos contra la placa del equipo.", borrador.asignacion.notas && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("br", null), /*#__PURE__*/React.createElement("b", null, "Indicaciones:"), " ", borrador.asignacion.notas)), sinNombre && /*#__PURE__*/React.createElement("div", {
+  }, /*#__PURE__*/React.createElement("b", null, "Asignada por coordinación"), borrador.asignacion.asignadaPor ? " (" + borrador.asignacion.asignadaPor + ")" : "", borrador.asignacion.fechaProgramada ? " para el " + fechaCorta(borrador.asignacion.fechaProgramada) : "", ". Los datos de la unidad y del equipo ya vienen llenos; revíselos contra la placa del equipo.", borrador.asignacion.notas && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("br", null), /*#__PURE__*/React.createElement("b", null, "Indicaciones:"), " ", borrador.asignacion.notas)), sinNombre && /*#__PURE__*/React.createElement("div", {
     className: "note bad"
-  }, "Su usuario no coincide con ning\xFAn ingeniero de la lista del formulario, as\xED que la orden no se puede enviar a su nombre. Elija uno en el paso de firmas o pida a coordinaci\xF3n que corrija su nombre en Gestionar usuarios."), !!sinMapear.length && /*#__PURE__*/React.createElement("div", {
+  }, "Su usuario no coincide con ningún ingeniero de la lista del formulario, así que la orden no se puede enviar a su nombre. Elija uno en el paso de firmas o pida a coordinación que corrija su nombre en Gestionar usuarios."), !!sinMapear.length && /*#__PURE__*/React.createElement("div", {
     className: "note"
-  }, "Estos campos no se encontraron en el formulario de Jotform y no se enviar\xE1n: ", sinMapear.map(c => c.et).join(", "), ". Revise la pesta\xF1a Ajustes."), /*#__PURE__*/React.createElement("div", {
+  }, "Estos campos no se encontraron en el formulario de Jotform y no se enviarán: ", sinMapear.map(c => c.et).join(", "), ". Revise la pestaña Ajustes."), /*#__PURE__*/React.createElement("div", {
     className: "card"
   }, S.campos.map(c => /*#__PURE__*/React.createElement(Campo, {
     key: c.k,
@@ -1989,7 +2058,7 @@ function Formulario({
   }, sec > 0 && /*#__PURE__*/React.createElement("button", {
     className: "btn",
     onClick: () => setSec(sec - 1)
-  }, "Atr\xE1s"), ultima ? /*#__PURE__*/React.createElement("button", {
+  }, "Atrás"), ultima ? /*#__PURE__*/React.createElement("button", {
     className: "btn primary",
     onClick: intentarEnviar
   }, "Enviar orden") : /*#__PURE__*/React.createElement("button", {
@@ -2009,7 +2078,7 @@ function Formulario({
       });
       cancelar();
     }
-  }, "Salir y continuar despu\xE9s"));
+  }, "Salir y continuar después"));
 }
 function ListaBorradores({
   borradores,
@@ -2028,7 +2097,7 @@ function ListaBorradores({
 }) {
   return /*#__PURE__*/React.createElement("main", null, /*#__PURE__*/React.createElement("h2", null, "Borradores"), /*#__PURE__*/React.createElement("p", {
     className: "lead"
-  }, "\xD3rdenes sin terminar guardadas en este tel\xE9fono. Nada se pierde si cierra la app o se queda sin se\xF1al."), /*#__PURE__*/React.createElement("button", {
+  }, "Órdenes sin terminar guardadas en este teléfono. Nada se pierde si cierra la app o se queda sin señal."), /*#__PURE__*/React.createElement("button", {
     className: "btn primary block",
     style: {
       marginBottom: 14
@@ -2046,9 +2115,9 @@ function ListaBorradores({
     style: {
       marginTop: 4
     }
-  }, "Esperando se\xF1al"), /*#__PURE__*/React.createElement("p", {
+  }, "Esperando señal"), /*#__PURE__*/React.createElement("p", {
     className: "lead"
-  }, "Se env\xEDan solas al reconectar."), /*#__PURE__*/React.createElement("button", {
+  }, "Se envían solas al reconectar."), /*#__PURE__*/React.createElement("button", {
     className: "btn block",
     style: {
       marginBottom: 10
@@ -2057,7 +2126,7 @@ function ListaBorradores({
     onClick: reintentar
   }, enviando ? /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("span", {
     className: "spin"
-  }), " Enviando\u2026") : "Intentar ahora"), cola.map(o => /*#__PURE__*/React.createElement("div", {
+  }), " Enviando…") : "Intentar ahora"), cola.map(o => /*#__PURE__*/React.createElement("div", {
     className: "item",
     key: o.id
   }, /*#__PURE__*/React.createElement("div", {
@@ -2083,7 +2152,7 @@ function ListaBorradores({
     }
   }, "Sin terminar")), !borradores.length ? /*#__PURE__*/React.createElement("div", {
     className: "empty"
-  }, "No hay borradores.", /*#__PURE__*/React.createElement("br", null), "Empiece una orden y quedar\xE1 aqu\xED en cuanto escriba el primer dato.") : borradores.map(b => {
+  }, "No hay borradores.", /*#__PURE__*/React.createElement("br", null), "Empiece una orden y quedará aquí en cuanto escriba el primer dato.") : borradores.map(b => {
     const v = b.valores,
       pend = faltanRequeridos(v, mapa).length;
     return /*#__PURE__*/React.createElement("div", {
@@ -2109,7 +2178,7 @@ function ListaBorradores({
       className: "t"
     }, v.equipo || "Equipo sin capturar"), /*#__PURE__*/React.createElement("div", {
       className: "s"
-    }, v.unidad || "Unidad sin capturar", " \xB7 ", v.inventario || "s/inv", /*#__PURE__*/React.createElement("br", null), b.folio ? b.folio + " · " : "", "Editado ", fmtFecha(b.actualizada)), b.asignacion && !b.asignacion.cancelada && /*#__PURE__*/React.createElement("div", {
+    }, v.unidad || "Unidad sin capturar", " · ", v.inventario || "s/inv", /*#__PURE__*/React.createElement("br", null), b.folio ? b.folio + " · " : "", "Editado ", fmtFecha(b.actualizada)), b.asignacion && !b.asignacion.cancelada && /*#__PURE__*/React.createElement("div", {
       className: "s",
       style: {
         marginTop: 5
@@ -2122,13 +2191,13 @@ function ListaBorradores({
         color: "var(--alert)",
         marginTop: 5
       }
-    }, "Coordinaci\xF3n cancel\xF3 esta asignaci\xF3n. Puede eliminar el borrador."), b.errorEnvio && /*#__PURE__*/React.createElement("div", {
+    }, "Coordinación canceló esta asignación. Puede eliminar el borrador."), b.errorEnvio && /*#__PURE__*/React.createElement("div", {
       className: "s",
       style: {
         color: "var(--alert)",
         marginTop: 5
       }
-    }, "No se envi\xF3: ", b.errorEnvio)), /*#__PURE__*/React.createElement("div", {
+    }, "No se envió: ", b.errorEnvio)), /*#__PURE__*/React.createElement("div", {
       style: {
         display: "flex",
         flexDirection: "column",
@@ -2235,24 +2304,24 @@ function MisEnvios({
     style: {
       marginBottom: 12
     }
-  }, "\u2190 Volver"), /*#__PURE__*/React.createElement("h2", null, abierta.folio || "Envío " + abierta.id), /*#__PURE__*/React.createElement("p", {
+  }, "← Volver"), /*#__PURE__*/React.createElement("h2", null, abierta.folio || "Envío " + abierta.id), /*#__PURE__*/React.createElement("p", {
     className: "lead"
-  }, abierta.equipo || "Equipo", " \xB7 ", abierta.unidad || "—", /*#__PURE__*/React.createElement("br", null), abierta.created_at ? new Date(abierta.created_at).toLocaleString("es-MX") : ""), errDetalle && /*#__PURE__*/React.createElement("div", {
+  }, abierta.equipo || "Equipo", " · ", abierta.unidad || "—", /*#__PURE__*/React.createElement("br", null), abierta.created_at ? new Date(abierta.created_at).toLocaleString("es-MX") : ""), errDetalle && /*#__PURE__*/React.createElement("div", {
     className: "note bad"
   }, errDetalle), cargandoDetalle ? /*#__PURE__*/React.createElement("div", {
     className: "empty"
   }, /*#__PURE__*/React.createElement("span", {
     className: "spin"
-  }), " Abriendo la orden\u2026") : detalle && /*#__PURE__*/React.createElement("div", {
+  }), " Abriendo la orden…") : detalle && /*#__PURE__*/React.createElement("div", {
     className: "card"
   }, /*#__PURE__*/React.createElement("div", {
     className: "kv"
   }, detalle.map((r, i) => /*#__PURE__*/React.createElement("div", {
     key: i
   }, /*#__PURE__*/React.createElement("b", null, r.pregunta, ":"), " ", r.valor)))));
-  return /*#__PURE__*/React.createElement("main", null, /*#__PURE__*/React.createElement("h2", null, "Mis env\xEDos"), /*#__PURE__*/React.createElement("p", {
+  return /*#__PURE__*/React.createElement("main", null, /*#__PURE__*/React.createElement("h2", null, "Mis envíos"), /*#__PURE__*/React.createElement("p", {
     className: "lead"
-  }, "\xD3rdenes registradas en Jotform a nombre de ", ingeniero.split(" ")[0], "."), /*#__PURE__*/React.createElement("div", {
+  }, "Órdenes registradas en Jotform a nombre de ", ingeniero.split(" ")[0], "."), /*#__PURE__*/React.createElement("div", {
     className: "card tight"
   }, /*#__PURE__*/React.createElement("div", {
     className: "row"
@@ -2264,7 +2333,7 @@ function MisEnvios({
     }
   }, /*#__PURE__*/React.createElement("option", {
     value: ""
-  }, "Todos los a\xF1os"), anios.map(a => /*#__PURE__*/React.createElement("option", {
+  }, "Todos los años"), anios.map(a => /*#__PURE__*/React.createElement("option", {
     key: a,
     value: a
   }, a))), /*#__PURE__*/React.createElement("select", {
@@ -2283,7 +2352,7 @@ function MisEnvios({
     }
   }, /*#__PURE__*/React.createElement("option", {
     value: ""
-  }, "Todas las unidades m\xE9dicas"), hospitales.map(h => /*#__PURE__*/React.createElement("option", {
+  }, "Todas las unidades médicas"), hospitales.map(h => /*#__PURE__*/React.createElement("option", {
     key: h,
     value: h
   }, h))), /*#__PURE__*/React.createElement("input", {
@@ -2305,7 +2374,7 @@ function MisEnvios({
     disabled: cargando
   }, cargando ? /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("span", {
     className: "spin"
-  }), " Consultando\u2026") : "Actualizar"), filtrando && /*#__PURE__*/React.createElement("button", {
+  }), " Consultando…") : "Actualizar"), filtrando && /*#__PURE__*/React.createElement("button", {
     className: "btn ghost",
     onClick: limpiar
   }, "Quitar filtros"))), error && /*#__PURE__*/React.createElement("div", {
@@ -2317,7 +2386,7 @@ function MisEnvios({
     }
   }, cargando ? "Consultando el historial…" : lista.length === enviados.length ? `${enviados.length} orden${enviados.length === 1 ? "" : "es"} en total` : `${lista.length} de ${enviados.length} órdenes`), !cargando && !enviados.length && !error && /*#__PURE__*/React.createElement("div", {
     className: "empty"
-  }, "Todav\xEDa no hay env\xEDos a su nombre, o no hay conexi\xF3n para consultarlos."), !cargando && enviados.length > 0 && !lista.length && /*#__PURE__*/React.createElement("div", {
+  }, "Todavía no hay envíos a su nombre, o no hay conexión para consultarlos."), !cargando && enviados.length > 0 && !lista.length && /*#__PURE__*/React.createElement("div", {
     className: "empty"
   }, "Ninguna orden coincide con los filtros."), lista.map(s => /*#__PURE__*/React.createElement("div", {
     className: "item",
@@ -2332,7 +2401,7 @@ function MisEnvios({
     className: "t"
   }, s.equipo || "Equipo"), /*#__PURE__*/React.createElement("div", {
     className: "s"
-  }, s.folio ? s.folio + " · " : "", s.unidad || "—", " \xB7 ", s.inventario || "s/inv", /*#__PURE__*/React.createElement("br", null), s.created_at ? new Date(s.created_at).toLocaleString("es-MX") : "sin fecha")), /*#__PURE__*/React.createElement("span", {
+  }, s.folio ? s.folio + " · " : "", s.unidad || "—", " · ", s.inventario || "s/inv", /*#__PURE__*/React.createElement("br", null), s.created_at ? new Date(s.created_at).toLocaleString("es-MX") : "sin fecha")), /*#__PURE__*/React.createElement("span", {
     className: "tag ok"
   }, "enviada"))));
 }
@@ -2397,9 +2466,9 @@ function Avisos({
     style: {
       marginBottom: 12
     }
-  }, "\u2190 Volver"), /*#__PURE__*/React.createElement("h2", null, editando === "nuevo" ? "Nuevo aviso" : "Editar aviso"), /*#__PURE__*/React.createElement("p", {
+  }, "← Volver"), /*#__PURE__*/React.createElement("h2", null, editando === "nuevo" ? "Nuevo aviso" : "Editar aviso"), /*#__PURE__*/React.createElement("p", {
     className: "lead"
-  }, "Aparece en la pesta\xF1a Avisos del ingeniero asignado."), /*#__PURE__*/React.createElement("div", {
+  }, "Aparece en la pestaña Avisos del ingeniero asignado."), /*#__PURE__*/React.createElement("div", {
     className: "card"
   }, /*#__PURE__*/React.createElement("label", {
     className: "f"
@@ -2436,7 +2505,7 @@ function Avisos({
     className: "f"
   }, /*#__PURE__*/React.createElement("span", {
     className: "lb"
-  }, "T\xEDtulo ", /*#__PURE__*/React.createElement("em", null, "*")), /*#__PURE__*/React.createElement("input", {
+  }, "Título ", /*#__PURE__*/React.createElement("em", null, "*")), /*#__PURE__*/React.createElement("input", {
     type: "text",
     value: aviso.titulo,
     onChange: e => setAviso({
@@ -2457,7 +2526,7 @@ function Avisos({
     style: {
       minHeight: 150
     },
-    placeholder: "Un equipo por rengl\xF3n, con su ubicaci\xF3n y fecha programada"
+    placeholder: "Un equipo por renglón, con su ubicación y fecha programada"
   })), /*#__PURE__*/React.createElement("button", {
     className: "btn primary block",
     disabled: !aviso.titulo.trim() || !aviso.mensaje.trim() || guardando,
@@ -2482,7 +2551,7 @@ function Avisos({
     disabled: cargando
   }, cargando ? /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("span", {
     className: "spin"
-  }), " Consultando\u2026") : "Actualizar"), error && /*#__PURE__*/React.createElement("div", {
+  }), " Consultando…") : "Actualizar"), error && /*#__PURE__*/React.createElement("div", {
     className: "note bad"
   }, error), !cargando && !avisos.length && !error && /*#__PURE__*/React.createElement("div", {
     className: "empty"
@@ -2616,7 +2685,7 @@ function Tablero({
     style: {
       marginBottom: 12
     }
-  }, "\u2190 Volver"), /*#__PURE__*/React.createElement("h2", null, t.fila ? "Editar tarea" : "Nueva tarea"), /*#__PURE__*/React.createElement("div", {
+  }, "← Volver"), /*#__PURE__*/React.createElement("h2", null, t.fila ? "Editar tarea" : "Nueva tarea"), /*#__PURE__*/React.createElement("div", {
     className: "card"
   }, /*#__PURE__*/React.createElement("label", {
     className: "f"
@@ -2658,14 +2727,14 @@ function Tablero({
     className: "f"
   }, /*#__PURE__*/React.createElement("span", {
     className: "lb"
-  }, "Ubicaci\xF3n"), /*#__PURE__*/React.createElement("input", {
+  }, "Ubicación"), /*#__PURE__*/React.createElement("input", {
     type: "text",
     value: t.ubicacion || "",
     onChange: e => setT({
       ...t,
       ubicacion: e.target.value
     }),
-    placeholder: "Hospital, \xE1rea"
+    placeholder: "Hospital, área"
   })), /*#__PURE__*/React.createElement("div", {
     className: "f"
   }, /*#__PURE__*/React.createElement("span", {
@@ -2724,13 +2793,13 @@ function Tablero({
       style: {
         marginBottom: 12
       }
-    }, "\u2190 Tablero"), /*#__PURE__*/React.createElement("h2", null, rotulo(abierta)), /*#__PURE__*/React.createElement("p", {
+    }, "← Tablero"), /*#__PURE__*/React.createElement("h2", null, rotulo(abierta)), /*#__PURE__*/React.createElement("p", {
       className: "lead"
-    }, (PRIORIDADES.find(p => p.k === abierta.prioridad) || {}).n, " \xB7 ", col ? col.n : abierta.estado), /*#__PURE__*/React.createElement("div", {
+    }, (PRIORIDADES.find(p => p.k === abierta.prioridad) || {}).n, " · ", col ? col.n : abierta.estado), /*#__PURE__*/React.createElement("div", {
       className: "card"
     }, /*#__PURE__*/React.createElement("div", {
       className: "kv"
-    }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("b", null, "Inicio:"), " ", abierta.inicio || "—"), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("b", null, "Fin:"), " ", abierta.fin || "—"), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("b", null, "Ubicaci\xF3n:"), " ", abierta.ubicacion || "—"), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("b", null, "Asignada a:"), " ", abierta.asignado || "sin asignar"), esAdmin && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("b", null, "Asign\xF3:"), " ", abierta.asignadoPor || "—"), abierta.observaciones && /*#__PURE__*/React.createElement("div", {
+    }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("b", null, "Inicio:"), " ", abierta.inicio || "—"), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("b", null, "Fin:"), " ", abierta.fin || "—"), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("b", null, "Ubicación:"), " ", abierta.ubicacion || "—"), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("b", null, "Asignada a:"), " ", abierta.asignado || "sin asignar"), esAdmin && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("b", null, "Asignó:"), " ", abierta.asignadoPor || "—"), abierta.observaciones && /*#__PURE__*/React.createElement("div", {
       style: {
         marginTop: 8
       }
@@ -2738,7 +2807,7 @@ function Tablero({
       style: {
         marginTop: 18
       }
-    }, "Bit\xE1cora"), /*#__PURE__*/React.createElement("div", {
+    }, "Bitácora"), /*#__PURE__*/React.createElement("div", {
       className: "card"
     }, /*#__PURE__*/React.createElement("div", {
       className: "kv",
@@ -2778,11 +2847,11 @@ function Tablero({
       className: "f"
     }, /*#__PURE__*/React.createElement("span", {
       className: "lb"
-    }, "Observaci\xF3n ", /*#__PURE__*/React.createElement("em", null, "*")), /*#__PURE__*/React.createElement("textarea", {
+    }, "Observación ", /*#__PURE__*/React.createElement("em", null, "*")), /*#__PURE__*/React.createElement("textarea", {
       value: comentario,
       onChange: e => setComentario(e.target.value),
       autoFocus: true,
-      placeholder: "Por qu\xE9 no se pudo completar: falta de refacci\xF3n, equipo en uso, acceso restringido\u2026"
+      placeholder: "Por qué no se pudo completar: falta de refacción, equipo en uso, acceso restringido…"
     })), /*#__PURE__*/React.createElement("div", {
       className: "actions"
     }, /*#__PURE__*/React.createElement("button", {
@@ -2800,7 +2869,7 @@ function Tablero({
         setObservando(false);
         setComentario("");
       }
-    }, "Guardar observaci\xF3n")))), !puedeMover && /*#__PURE__*/React.createElement("div", {
+    }, "Guardar observación")))), !puedeMover && /*#__PURE__*/React.createElement("div", {
       className: "note"
     }, esVisualizador ? "Su perfil es de solo consulta." : "Esta tarea no está asignada a usted."), esAdmin && /*#__PURE__*/React.createElement("div", {
       className: "actions"
@@ -2873,7 +2942,7 @@ function Tablero({
         a: m.a,
         m: m.m - 1
       })
-    }, "\u2039"), /*#__PURE__*/React.createElement("b", null, MESES_N[mes.m], " ", mes.a), /*#__PURE__*/React.createElement("button", {
+    }, "‹"), /*#__PURE__*/React.createElement("b", null, MESES_N[mes.m], " ", mes.a), /*#__PURE__*/React.createElement("button", {
       className: "btn ghost",
       style: {
         padding: "8px 12px"
@@ -2885,7 +2954,7 @@ function Tablero({
         a: m.a,
         m: m.m + 1
       })
-    }, "\u203A")), /*#__PURE__*/React.createElement("div", {
+    }, "›")), /*#__PURE__*/React.createElement("div", {
       className: "cal"
     }, ["L", "M", "M", "J", "V", "S", "D"].map((d, i) => /*#__PURE__*/React.createElement("div", {
       className: "dn",
@@ -2914,7 +2983,7 @@ function Tablero({
       }
     }, dia), !delDia.length && /*#__PURE__*/React.createElement("div", {
       className: "empty"
-    }, "Sin tareas ese d\xEDa."), delDia.map(x => /*#__PURE__*/React.createElement("div", {
+    }, "Sin tareas ese día."), delDia.map(x => /*#__PURE__*/React.createElement("div", {
       className: "tarea " + x.prioridad,
       key: x.id,
       onClick: () => setAbierta(x)
@@ -2935,7 +3004,7 @@ function Tablero({
     const nombres = Object.keys(grupos).sort((a, b) => a.localeCompare(b));
     return /*#__PURE__*/React.createElement("main", null, /*#__PURE__*/React.createElement("h2", null, "Tablero"), /*#__PURE__*/React.createElement("p", {
       className: "lead"
-    }, "D\xF3nde est\xE1 asignado cada ingeniero."), /*#__PURE__*/React.createElement("div", {
+    }, "Dónde está asignado cada ingeniero."), /*#__PURE__*/React.createElement("div", {
       className: "vistas"
     }, /*#__PURE__*/React.createElement("button", {
       "aria-pressed": true
@@ -2951,7 +3020,7 @@ function Tablero({
       disabled: cargando
     }, cargando ? /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("span", {
       className: "spin"
-    }), " Consultando\u2026") : "Actualizar"), error && /*#__PURE__*/React.createElement("div", {
+    }), " Consultando…") : "Actualizar"), error && /*#__PURE__*/React.createElement("div", {
       className: "note bad"
     }, error), !cargando && !tareas.length && !error && /*#__PURE__*/React.createElement("div", {
       className: "empty"
@@ -3132,7 +3201,7 @@ function Tablero({
       type: "email",
       value: correoDestino,
       onChange: e => setCorreoDestino(e.target.value),
-      placeholder: "Deje vac\xEDo para usar el correo de su usuario"
+      placeholder: "Deje vacío para usar el correo de su usuario"
     })), /*#__PURE__*/React.createElement("button", {
       className: "btn primary block",
       disabled: !lista.length || enviandoRep,
@@ -3142,12 +3211,12 @@ function Tablero({
       })
     }, enviandoRep ? /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("span", {
       className: "spin"
-    }), " Generando\u2026") : "Enviar reporte completo en PDF"), /*#__PURE__*/React.createElement("p", {
+    }), " Generando…") : "Enviar reporte completo en PDF"), /*#__PURE__*/React.createElement("p", {
       className: "lead",
       style: {
         marginTop: 8
       }
-    }, "Incluye totales, el detalle de cada actividad y su bit\xE1cora de observaciones."), /*#__PURE__*/React.createElement("div", {
+    }, "Incluye totales, el detalle de cada actividad y su bitácora de observaciones."), /*#__PURE__*/React.createElement("div", {
       className: "card",
       style: {
         marginTop: 6
@@ -3165,7 +3234,7 @@ function Tablero({
       style: {
         marginBottom: 12
       }
-    }, "D\xF3nde est\xE1 asignado cada ingeniero y por cu\xE1ntos d\xEDas, en el periodo de arriba. Sin prioridades ni estados."), /*#__PURE__*/React.createElement("label", {
+    }, "Dónde está asignado cada ingeniero y por cuántos días, en el periodo de arriba. Sin prioridades ni estados."), /*#__PURE__*/React.createElement("label", {
       className: "f"
     }, /*#__PURE__*/React.createElement("span", {
       className: "lb"
@@ -3184,7 +3253,7 @@ function Tablero({
       })
     }, enviandoUbic ? /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("span", {
       className: "spin"
-    }), " Generando\u2026") : "Enviar reporte de ubicaciones")), lista.map(x => /*#__PURE__*/React.createElement("div", {
+    }), " Generando…") : "Enviar reporte de ubicaciones")), lista.map(x => /*#__PURE__*/React.createElement("div", {
       className: "tarea " + x.prioridad,
       key: x.id,
       onClick: () => setAbierta(x),
@@ -3195,7 +3264,7 @@ function Tablero({
       className: "t"
     }, x.titulo), /*#__PURE__*/React.createElement("div", {
       className: "d"
-    }, x.inicio || "sin fecha", x.fin && x.fin !== x.inicio ? " → " + x.fin : "", /*#__PURE__*/React.createElement("br", null), x.asignado || "sin asignar", " \xB7 ", (COLUMNAS.find(c => c.k === x.estado) || {}).n))));
+    }, x.inicio || "sin fecha", x.fin && x.fin !== x.inicio ? " → " + x.fin : "", /*#__PURE__*/React.createElement("br", null), x.asignado || "sin asignar", " · ", (COLUMNAS.find(c => c.k === x.estado) || {}).n))));
   }
 
   // ---- Tablero ----
@@ -3231,7 +3300,7 @@ function Tablero({
     disabled: cargando
   }, cargando ? /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("span", {
     className: "spin"
-  }), " Consultando\u2026") : "Actualizar"), error && /*#__PURE__*/React.createElement("div", {
+  }), " Consultando…") : "Actualizar"), error && /*#__PURE__*/React.createElement("div", {
     className: "note bad"
   }, error), !cargando && !tareas.length && !error && /*#__PURE__*/React.createElement("div", {
     className: "empty"
@@ -3248,7 +3317,7 @@ function Tablero({
         color: "var(--muted)",
         padding: "6px 2px"
       }
-    }, "Vac\xEDa"), dela.map(x => /*#__PURE__*/React.createElement("div", {
+    }, "Vacía"), dela.map(x => /*#__PURE__*/React.createElement("div", {
       className: "tarea " + x.prioridad,
       key: x.id,
       onClick: () => setAbierta(x)
@@ -3313,7 +3382,7 @@ function Usuarios({
     style: {
       marginBottom: 12
     }
-  }, "\u2190 Volver"), /*#__PURE__*/React.createElement("h2", null, editando === "nuevo" ? "Nuevo usuario" : "Editar usuario"), /*#__PURE__*/React.createElement("p", {
+  }, "← Volver"), /*#__PURE__*/React.createElement("h2", null, editando === "nuevo" ? "Nuevo usuario" : "Editar usuario"), /*#__PURE__*/React.createElement("p", {
     className: "lead"
   }, editando === "nuevo" ? "El nombre debe coincidir con la lista de ingenieros del formulario para que sus órdenes se registren a su nombre." : "Deje el NIP vacío si no quiere cambiarlo."), /*#__PURE__*/React.createElement("div", {
     className: "card"
@@ -3361,7 +3430,7 @@ function Usuarios({
     className: "f"
   }, /*#__PURE__*/React.createElement("span", {
     className: "lb"
-  }, "NIP de 4 d\xEDgitos ", editando === "nuevo" && /*#__PURE__*/React.createElement("em", null, "*")), /*#__PURE__*/React.createElement("input", {
+  }, "NIP de 4 dígitos ", editando === "nuevo" && /*#__PURE__*/React.createElement("em", null, "*")), /*#__PURE__*/React.createElement("input", {
     type: "text",
     inputMode: "numeric",
     maxLength: 4,
@@ -3383,11 +3452,11 @@ function Usuarios({
     })
   }, /*#__PURE__*/React.createElement("option", {
     value: "operador"
-  }, "Operador \xB7 captura sus \xF3rdenes"), /*#__PURE__*/React.createElement("option", {
+  }, "Operador · captura sus órdenes"), /*#__PURE__*/React.createElement("option", {
     value: "visualizador"
-  }, "Visualizador \xB7 solo consulta el tablero"), /*#__PURE__*/React.createElement("option", {
+  }, "Visualizador · solo consulta el tablero"), /*#__PURE__*/React.createElement("option", {
     value: "administrador"
-  }, "Administrador \xB7 gestiona todo"))), /*#__PURE__*/React.createElement("label", {
+  }, "Administrador · gestiona todo"))), /*#__PURE__*/React.createElement("label", {
     className: "f"
   }, /*#__PURE__*/React.createElement("span", {
     className: "lb"
@@ -3428,7 +3497,7 @@ function Usuarios({
   }) : "Guardar usuario")));
   return /*#__PURE__*/React.createElement("main", null, /*#__PURE__*/React.createElement("h2", null, "Usuarios"), /*#__PURE__*/React.createElement("p", {
     className: "lead"
-  }, "Qui\xE9n puede entrar a la app y con qu\xE9 permisos."), /*#__PURE__*/React.createElement("button", {
+  }, "Quién puede entrar a la app y con qué permisos."), /*#__PURE__*/React.createElement("button", {
     className: "btn primary block",
     style: {
       marginBottom: 10
@@ -3443,7 +3512,7 @@ function Usuarios({
     disabled: cargando
   }, cargando ? /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("span", {
     className: "spin"
-  }), " Consultando\u2026") : "Actualizar"), error && /*#__PURE__*/React.createElement("div", {
+  }), " Consultando…") : "Actualizar"), error && /*#__PURE__*/React.createElement("div", {
     className: "note bad"
   }, error), !cargando && !usuarios.length && !error && /*#__PURE__*/React.createElement("div", {
     className: "empty"
@@ -3514,9 +3583,9 @@ function Chat({
     style: {
       marginBottom: 12
     }
-  }, "\u2190 Volver"), /*#__PURE__*/React.createElement("h2", null, "Nueva conversaci\xF3n"), /*#__PURE__*/React.createElement("p", {
+  }, "← Volver"), /*#__PURE__*/React.createElement("h2", null, "Nueva conversación"), /*#__PURE__*/React.createElement("p", {
     className: "lead"
-  }, "Se identifica por el n\xFAmero de inventario del equipo o por el folio de la orden."), /*#__PURE__*/React.createElement("div", {
+  }, "Se identifica por el número de inventario del equipo o por el folio de la orden."), /*#__PURE__*/React.createElement("div", {
     className: "card"
   }, /*#__PURE__*/React.createElement("label", {
     className: "f"
@@ -3562,14 +3631,14 @@ function Chat({
       setTitulo("");
       setDestino("");
     }
-  }, "Abrir conversaci\xF3n")));
+  }, "Abrir conversación")));
   if (hiloAbierto) return /*#__PURE__*/React.createElement("main", null, /*#__PURE__*/React.createElement("button", {
     className: "btn ghost",
     onClick: cerrarHilo,
     style: {
       marginBottom: 12
     }
-  }, "\u2190 Conversaciones"), /*#__PURE__*/React.createElement("h2", null, hiloAbierto.titulo || hiloAbierto.clave), /*#__PURE__*/React.createElement("p", {
+  }, "← Conversaciones"), /*#__PURE__*/React.createElement("h2", null, hiloAbierto.titulo || hiloAbierto.clave), /*#__PURE__*/React.createElement("p", {
     className: "lead"
   }, hiloAbierto.clave, hiloAbierto.ingeniero ? " · dirigida a " + hiloAbierto.ingeniero : " · sin ingeniero asignado"), esCoordinador && /*#__PURE__*/React.createElement("div", {
     className: "card tight",
@@ -3593,7 +3662,7 @@ function Chat({
     value: i
   }, i))))), !mensajes.length && /*#__PURE__*/React.createElement("div", {
     className: "empty"
-  }, "Todav\xEDa no hay mensajes. Escriba el primero."), /*#__PURE__*/React.createElement("div", {
+  }, "Todavía no hay mensajes. Escriba el primero."), /*#__PURE__*/React.createElement("div", {
     className: "burbujas"
   }, mensajes.map((m, i) => {
     const mio = norm(m.autor) === norm(ingeniero);
@@ -3634,7 +3703,7 @@ function Chat({
     style: {
       marginTop: 14
     }
-  }, "Se van a borrar los ", mensajes.length, " mensajes de esta conversaci\xF3n para todos. No se puede deshacer.", /*#__PURE__*/React.createElement("div", {
+  }, "Se van a borrar los ", mensajes.length, " mensajes de esta conversación para todos. No se puede deshacer.", /*#__PURE__*/React.createElement("div", {
     className: "actions",
     style: {
       marginTop: 10
@@ -3648,13 +3717,13 @@ function Chat({
       setConfirmando(false);
       finalizar(hiloAbierto);
     }
-  }, "S\xED, finalizar"))) : /*#__PURE__*/React.createElement("button", {
+  }, "Sí, finalizar"))) : /*#__PURE__*/React.createElement("button", {
     className: "btn danger ghost block",
     style: {
       marginTop: 14
     },
     onClick: () => setConfirmando(true)
-  }, "Finalizar conversaci\xF3n")));
+  }, "Finalizar conversación")));
   return /*#__PURE__*/React.createElement("main", null, /*#__PURE__*/React.createElement("h2", null, "Chat"), /*#__PURE__*/React.createElement("p", {
     className: "lead"
   }, esCoordinador ? "Todas las conversaciones del equipo." : "Conversaciones sobre sus órdenes y equipos."), /*#__PURE__*/React.createElement("button", {
@@ -3663,7 +3732,7 @@ function Chat({
       marginBottom: 10
     },
     onClick: () => setNuevo(true)
-  }, "Nueva conversaci\xF3n"), /*#__PURE__*/React.createElement("button", {
+  }, "Nueva conversación"), /*#__PURE__*/React.createElement("button", {
     className: "btn ghost block",
     style: {
       marginBottom: 14
@@ -3672,13 +3741,13 @@ function Chat({
     disabled: cargando
   }, cargando ? /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("span", {
     className: "spin"
-  }), " Consultando\u2026") : "Actualizar"), !!pendientes && /*#__PURE__*/React.createElement("div", {
+  }), " Consultando…") : "Actualizar"), !!pendientes && /*#__PURE__*/React.createElement("div", {
     className: "note"
-  }, pendientes, " mensaje(s) esperando se\xF1al. Se env\xEDan solos al reconectar."), error && /*#__PURE__*/React.createElement("div", {
+  }, pendientes, " mensaje(s) esperando señal. Se envían solos al reconectar."), error && /*#__PURE__*/React.createElement("div", {
     className: "note bad"
   }, error), !cargando && !hilos.length && !error && /*#__PURE__*/React.createElement("div", {
     className: "empty"
-  }, "No hay conversaciones todav\xEDa."), hilos.map(h => /*#__PURE__*/React.createElement("div", {
+  }, "No hay conversaciones todavía."), hilos.map(h => /*#__PURE__*/React.createElement("div", {
     className: "hilo",
     key: h.clave,
     onClick: () => abrirHilo(h)
@@ -3699,7 +3768,7 @@ function Chat({
     style: {
       color: "var(--alert)"
     }
-  }, " \xB7 sin asignar") : "")), /*#__PURE__*/React.createElement("div", {
+  }, " · sin asignar") : "")), /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
       flexDirection: "column",
@@ -3781,11 +3850,11 @@ function Ajustes({
   };
   return /*#__PURE__*/React.createElement("main", null, /*#__PURE__*/React.createElement("h2", null, "Ajustes"), /*#__PURE__*/React.createElement("p", {
     className: "lead"
-  }, "Identidad, conexi\xF3n y correspondencia de campos con el formulario de Jotform."), /*#__PURE__*/React.createElement("div", {
+  }, "Identidad, conexión y correspondencia de campos con el formulario de Jotform."), /*#__PURE__*/React.createElement("div", {
     className: "card"
   }, /*#__PURE__*/React.createElement("div", {
     className: "kv"
-  }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("b", null, "Usuario:"), " ", ingeniero), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("b", null, "Rol:"), " ", rol === "administrador" ? "Administrador" : rol === "visualizador" ? "Visualizador" : "Operador"), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("b", null, "Formulario:"), " ", CONFIG.FORM_ID), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("b", null, "Versi\xF3n de la app:"), " ", CONFIG.BUILD || "Rev.01"), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("b", null, "Proxy en uso:"), " \u2026", String(CONFIG.PROXY_URL).slice(-18)), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("b", null, "Estado del proxy:"), " ", estadoProxy), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("b", null, "\xDAltima revisi\xF3n:"), " ", ultimaRevision ? new Date(ultimaRevision).toLocaleString("es-MX") : "sin revisar"), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("b", null, "Almacenamiento:"), " ", Store.modo), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("b", null, "Preguntas le\xEDdas:"), " ", esquema ? Object.keys(esquema).length : 0)), /*#__PURE__*/React.createElement("div", {
+  }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("b", null, "Usuario:"), " ", ingeniero), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("b", null, "Rol:"), " ", rol === "administrador" ? "Administrador" : rol === "visualizador" ? "Visualizador" : "Operador"), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("b", null, "Formulario:"), " ", CONFIG.FORM_ID), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("b", null, "Versión de la app:"), " ", CONFIG.BUILD || "Rev.01"), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("b", null, "Proxy en uso:"), " …", String(CONFIG.PROXY_URL).slice(-18)), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("b", null, "Estado del proxy:"), " ", estadoProxy), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("b", null, "Última revisión:"), " ", ultimaRevision ? new Date(ultimaRevision).toLocaleString("es-MX") : "sin revisar"), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("b", null, "Almacenamiento:"), " ", Store.modo), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("b", null, "Preguntas leídas:"), " ", esquema ? Object.keys(esquema).length : 0)), /*#__PURE__*/React.createElement("div", {
     className: "actions",
     style: {
       marginTop: 12
@@ -3796,7 +3865,7 @@ function Ajustes({
   }, "Releer formulario"), /*#__PURE__*/React.createElement("button", {
     className: "btn ghost",
     onClick: salir
-  }, "Cerrar sesi\xF3n")), rol === "administrador" && /*#__PURE__*/React.createElement("button", {
+  }, "Cerrar sesión")), rol === "administrador" && /*#__PURE__*/React.createElement("button", {
     className: "btn primary block",
     style: {
       marginTop: 10
@@ -3885,7 +3954,7 @@ function Ajustes({
       marginTop: 10
     },
     onClick: probar
-  }, "Probar conexi\xF3n"), prueba && prueba.ok !== null && /*#__PURE__*/React.createElement("div", {
+  }, "Probar conexión"), prueba && prueba.ok !== null && /*#__PURE__*/React.createElement("div", {
     className: "note" + (prueba.ok ? "" : " bad"),
     style: {
       marginTop: 10
@@ -3910,7 +3979,7 @@ function Ajustes({
     }
   }, "Correspondencia de campos"), faltantes.length ? /*#__PURE__*/React.createElement("div", {
     className: "note bad"
-  }, faltantes.length, " campo(s) sin localizar en el formulario: ", faltantes.map(f => f.et).join(", "), ". Esos datos no se env\xEDan.") : /*#__PURE__*/React.createElement("div", {
+  }, faltantes.length, " campo(s) sin localizar en el formulario: ", faltantes.map(f => f.et).join(", "), ". Esos datos no se envían.") : /*#__PURE__*/React.createElement("div", {
     className: "note"
   }, "Los ", Object.keys(mapa).length, " campos de la app quedaron enlazados al formulario."), /*#__PURE__*/React.createElement("div", {
     className: "card"
@@ -3920,7 +3989,7 @@ function Ajustes({
     const m = mapa[c.k];
     return /*#__PURE__*/React.createElement("div", {
       key: c.k
-    }, /*#__PURE__*/React.createElement("b", null, c.et), " \u2192 ", m ? `qid ${m.qid} · ${m.type.replace("control_", "")}` : /*#__PURE__*/React.createElement("span", {
+    }, /*#__PURE__*/React.createElement("b", null, c.et), " → ", m ? `qid ${m.qid} · ${m.type.replace("control_", "")}` : /*#__PURE__*/React.createElement("span", {
       style: {
         color: "var(--alert)"
       }
@@ -4049,8 +4118,13 @@ function App() {
       }
       await refrescar();
       setListo(true);
-      leerEsquema(true);
-      if (!ses0 || !ses0.token) cargarUsuariosPublicos();else confirmarSesion(ses0.token);
+      // Sin sesión, lo único que hace falta para entrar es la lista de usuarios:
+      // se pide sola y el formulario (que tarda más, consulta Jotform) va después,
+      // para no competir por la misma conexión de datos móviles.
+      if (!ses0 || !ses0.token) cargarUsuariosPublicos().finally(() => leerEsquema(true));else {
+        leerEsquema(true);
+        confirmarSesion(ses0.token);
+      }
     })();
     const nueva = e => setVersionNueva(e.detail);
     window.addEventListener("versionNueva", nueva);
@@ -4115,12 +4189,31 @@ function App() {
     }
     setCargandoUsuarios(false);
   }, []);
+
+  // En la pantalla de acceso, si la lista no llegó, se vuelve a pedir sola al
+  // recuperar señal o al regresar a la app (antes solo con el botón Reintentar).
+  useEffect(() => {
+    if (!listo || ingeniero || !errUsuariosPub) return;
+    const otraVez = () => {
+      if (navigator.onLine && document.visibilityState === "visible") cargarUsuariosPublicos();
+    };
+    const reloj = setTimeout(otraVez, 8000);
+    window.addEventListener("online", otraVez);
+    document.addEventListener("visibilitychange", otraVez);
+    return () => {
+      clearTimeout(reloj);
+      window.removeEventListener("online", otraVez);
+      document.removeEventListener("visibilitychange", otraVez);
+    };
+  }, [listo, ingeniero, errUsuariosPub, cargarUsuariosPublicos]);
   const entrar = async (nombre, nip) => {
     try {
       const d = await Api.get({
         action: "login",
         nombre,
         nip
+      }, {
+        paralelo: false
       });
       await Store.put("meta", {
         id: "sesion",
@@ -4838,13 +4931,13 @@ function App() {
       padding: "2px 0 2px 10px",
       lineHeight: 1
     }
-  }, "\u2699")), /*#__PURE__*/React.createElement("div", {
+  }, "⚙")), /*#__PURE__*/React.createElement("div", {
     className: "strip"
   }, /*#__PURE__*/React.createElement("div", {
     className: "cell"
   }, /*#__PURE__*/React.createElement("b", {
     className: online ? "on" : "off"
-  }, online ? "EN LÍNEA" : "SIN SEÑAL"), /*#__PURE__*/React.createElement("i", null, "conexi\xF3n")), /*#__PURE__*/React.createElement("div", {
+  }, online ? "EN LÍNEA" : "SIN SEÑAL"), /*#__PURE__*/React.createElement("i", null, "conexión")), /*#__PURE__*/React.createElement("div", {
     className: "cell"
   }, /*#__PURE__*/React.createElement("b", null, misBorradores.length), /*#__PURE__*/React.createElement("i", null, "borradores")), /*#__PURE__*/React.createElement("div", {
     className: "cell"
@@ -4981,16 +5074,19 @@ function App() {
     className: "actualizar"
   }, /*#__PURE__*/React.createElement("span", {
     className: "txt"
-  }, "Hay una versi\xF3n nueva disponible"), /*#__PURE__*/React.createElement("button", {
+  }, "Hay una versión nueva disponible"), /*#__PURE__*/React.createElement("button", {
     onClick: () => {
       // Si hay órdenes a medias se avisa: la recarga no las borra, pero
       // conviene que el ingeniero lo sepa antes de que la pantalla cambie.
-      if (versionNueva.waiting) versionNueva.waiting.postMessage("actualizar");else location.reload();
+      if (versionNueva.waiting) {
+        window.__pidioActualizar = true;
+        versionNueva.waiting.postMessage("actualizar");
+      } else location.reload();
     }
   }, "Actualizar"), /*#__PURE__*/React.createElement("button", {
     className: "x",
     onClick: () => setVersionNueva(null)
-  }, "Despu\xE9s")), !editando && /*#__PURE__*/React.createElement("nav", {
+  }, "Después")), !editando && /*#__PURE__*/React.createElement("nav", {
     className: "tabs"
   }, (esVisualizador ? [["tablero", "▦", "Tablero"]] : [["tablero", "▦", "Tablero"], ["borradores", "▤", "Borradores"], ["envios", "✓", "Mis envíos"], ["avisos", "⚑", "Avisos"], ["chat", "✉", "Chat"]]).map(([k, ic, et]) => /*#__PURE__*/React.createElement("button", {
     key: k,
@@ -5013,8 +5109,16 @@ ReactDOM.createRoot(document.getElementById("root")).render(/*#__PURE__*/React.c
    en lugar de recargar solo. Recargar sin permiso en medio de una captura sería
    peor que quedarse una hora con la versión anterior. */
 if ("serviceWorker" in navigator && location.protocol === "https:") {
-  window.addEventListener("load", async () => {
+  // ¿Ya había una versión instalada controlando esta página? En la primera
+  // apertura no la hay, y el service worker nuevo toma el control a los pocos
+  // segundos: eso disparaba "controllerchange" y la app se RECARGABA SOLA en
+  // medio de la primera carga, tirando las peticiones en curso (Rev.42).
+  const habiaVersion = !!navigator.serviceWorker.controller;
+  window.addEventListener("load", () => setTimeout(async () => {
     try {
+      // Se registra unos segundos después de abrir: en la primera visita el
+      // service worker descarga de nuevo la app para guardarla, y con datos
+      // móviles eso competía con la lista de usuarios.
       const reg = await navigator.serviceWorker.register("sw.js");
       const revisar = () => {
         if (reg.waiting && navigator.serviceWorker.controller) {
@@ -5046,12 +5150,14 @@ if ("serviceWorker" in navigator && location.protocol === "https:") {
       });
       let recargando = false;
       navigator.serviceWorker.addEventListener("controllerchange", () => {
-        if (recargando) return;
+        // Primera instalación: nada que recargar. Sí se recarga si el ingeniero
+        // tocó "Actualizar" (aunque esta pestaña haya nacido sin versión previa).
+        if (recargando || !(habiaVersion || window.__pidioActualizar)) return;
         recargando = true;
         location.reload();
       });
     } catch (e) {/* sin service worker la app sigue funcionando con conexión */}
-  });
+  }, 4000));
 }
 </script>
 <!-- APP:FIN -->
