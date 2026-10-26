@@ -1,4 +1,4 @@
-/* Service worker · ot-ia-v45
+/* Service worker · ot-ia-v46
 
    Abrir la app: primero la copia guardada, al instante, y la red se consulta en
    segundo plano para la siguiente vez. Antes era al revés —red primero— y con
@@ -13,8 +13,9 @@
    hace unos segundos después de abrir para no competir por la conexión.
 
    v44 (Rev.43): Preact en lugar de React, app minificada, fotos como Blob.
-   v45 (Rev.44): firmas del responsable de área y del jefe de biomédica obligatorias. */
-const CACHE = 'ot-ia-v45';
+   v45 (Rev.44): firmas del responsable de área y del jefe de biomédica obligatorias.
+   v46 (Rev.45): orden de renta además de la orden de trabajo. */
+const CACHE = 'ot-ia-v46';
 const BASE = self.registration.scope;
 const PROPIOS = ['index.html', 'manifest.json', 'icon-192.png', 'icon-512.png'];
 

@@ -252,6 +252,82 @@ const SECCIONES = [
 ];
 const TODOS = SECCIONES.flatMap(s => s.campos);
 
+/* ORDEN DE RENTA (Rev.45) · formulario 262980494031055
+   Mismo mecanismo que la orden de trabajo: cada campo se enlaza por el texto de
+   su pregunta. Donde el formulario repite el texto ("ÁREA:", "SOLICITANTE:",
+   "NOMBRE RESPONSABLE:") se distingue por orden (nth) o por tipo de control (tipoQ).
+   req:true = obligatorio en la app aunque Jotform no lo exija. */
+const SECCIONES_RENTA = [
+{ id:"r-solicitud", titulo:"Solicitud y periodo", campos:[
+  { k:"solicitud",    et:"Solicitud",        tipo:"texto", req:true, m:{ label:"SOLICITUD" } },
+  { k:"factura",      et:"Factura",          tipo:"texto", m:{ label:"FACTURA" } },
+  { k:"inicioFecha",  et:"Fecha de inicio",  tipo:"fecha", req:true, mitad:true, m:{ label:"INICIO:" } },
+  { k:"inicioHora",   et:"Hora de inicio",   tipo:"hora",  req:true, mitad:true, m:{ label:"HORA DE INICIO:" } },
+  { k:"terminoFecha", et:"Fecha de término", tipo:"fecha", mitad:true, m:{ label:"TERMINO:" } },
+  { k:"terminoHora",  et:"Hora de término",  tipo:"hora",  mitad:true, m:{ label:"HORA DE TERMINO:" } },
+]},
+{ id:"r-unidad", titulo:"Unidad médica", campos:[
+  { k:"unidad",    et:"Unidad",    tipo:"texto", req:true, m:{ label:"UNIDAD:" } },
+  { k:"domicilio", et:"Domicilio", tipo:"direccion", m:{ label:"DOMICILIO:" } },
+  { k:"entidad",   et:"Entidad",   tipo:"select", opciones:ESTADOS, m:{ label:"ENTIDAD:" } },
+  { k:"telefono",  et:"Teléfono",  tipo:"tel", m:{ label:"TELÉFONO:" } },
+]},
+{ id:"r-equipo", titulo:"Equipo rentado", campos:[
+  { k:"equipo",      et:"Equipo",             tipo:"texto", req:true, m:{ label:"EQUIPO:" } },
+  { k:"marca",       et:"Marca",              tipo:"texto", m:{ label:"MARCA:" } },
+  { k:"modelo",      et:"Modelo",             tipo:"texto", m:{ label:"MODELO:" } },
+  { k:"serie",       et:"Serie",              tipo:"texto", req:true, m:{ label:"SERIE:" } },
+  { k:"solicitante", et:"Solicitante",        tipo:"texto", m:{ label:"SOLICITANTE:", nth:1 } },
+  { k:"area",        et:"Área de ubicación",  tipo:"texto", m:{ label:"ÁREA DE UBICACIÓN:" } },
+]},
+{ id:"r-entrega", titulo:"Entrega y cancelación", campos:[
+  { k:"entregaFecha",       et:"Fecha de entrega",      tipo:"fecha", mitad:true, m:{ label:"FECHA DE ENTREGA:" } },
+  { k:"entregaHora",        et:"Hora de entrega",       tipo:"hora",  mitad:true, m:{ label:"HORA DE ENTREGA:" } },
+  { k:"entregaSolicitante", et:"Solicitante (entrega)", tipo:"texto", m:{ label:"SOLICITANTE:", nth:2 } },
+  { k:"entregaArea",        et:"Área (entrega)",        tipo:"texto", m:{ label:"ÁREA:", nth:1 } },
+  { k:"cancelFecha",        et:"Fecha de cancelación",  tipo:"fecha", mitad:true, m:{ label:"FECHA DE CANCELACIÓN:" } },
+  { k:"cancelHora",         et:"Hora de cancelación",   tipo:"hora",  mitad:true, m:{ label:"HORA DE CANCELACIÓN:" } },
+  { k:"cancelo",            et:"Canceló",               tipo:"texto", m:{ label:"CANCELO:" } },
+  { k:"cancelArea",         et:"Área (cancelación)",    tipo:"texto", m:{ label:"ÁREA:", nth:2 } },
+]},
+{ id:"r-paciente", titulo:"Paciente", campos:[
+  { k:"paciente",     et:"Nombre completo",     tipo:"texto", m:{ label:"NOMBRE COMPLETO:" } },
+  { k:"pacienteFN",   et:"Fecha de nacimiento", tipo:"fecha", m:{ label:"F.N.:" } },
+  { k:"pacienteArea", et:"Área",                tipo:"texto", m:{ label:"ÁREA:", nth:3 } },
+  { k:"registro",     et:"Registro",            tipo:"texto", m:{ label:"REGISTRO:" } },
+]},
+{ id:"r-cobro", titulo:"Tiempo, monto y accesorios", campos:[
+  { k:"tiempoTotal", et:"Tiempo total", tipo:"texto", m:{ label:"TIEMPO TOTAL:" } },
+  { k:"monto",       et:"Monto unitario sin IVA", tipo:"numero", m:{ prefijo:"MONTO UNITARIO" } },
+  { k:"accesorios",  et:"Accesorios", tipo:"matriz", m:{ tipoQ:"control_matrix" },
+    columnas:["Accesorio", "Piezas", "No. serie", "Observaciones"], maxFilas:6 },
+]},
+{ id:"r-mant", titulo:"Mantenimiento del equipo", campos:[
+  { k:"preventivo",  et:"Preventivo (fecha)",          tipo:"fecha", m:{ prefijo:"PREVENTIVO" } },
+  { k:"calibracion", et:"Calibración (fecha y folio)", tipo:"texto", m:{ prefijo:"CALIBRACIÓN" } },
+]},
+{ id:"r-firmas", titulo:"Firmas", campos:[
+  { k:"ingenieroNombre",   et:"Nombre del ingeniero de servicio", tipo:"texto", req:true, m:{ label:"NOMBRE INGENIERO DE SERVICIO:" } },
+  { k:"firmaIng",          et:"Firma del ingeniero de servicio",  tipo:"firma", req:true, m:{ label:"FIRMA INGENIERO DE SERVICIO" } },
+  { k:"jefeNombre",        et:"Nombre del jefe de servicio",      tipo:"texto", m:{ label:"NOMBRE JEFE DE SERVICIO:" } },
+  { k:"firmaJefe",         et:"Firma del jefe de área",           tipo:"firma", req:true, m:{ label:"FIRMA JEFE DE AREA:" } },
+  { k:"responsableNombre", et:"Nombre del responsable",           tipo:"texto", m:{ label:"NOMBRE RESPONSABLE:", tipoQ:"control_textbox" } },
+  { k:"firmaResp",         et:"Firma del responsable",            tipo:"firma", req:true, m:{ label:"NOMBRE RESPONSABLE:", tipoQ:"control_signature" } },
+]},
+];
+const TODOS_RENTA = SECCIONES_RENTA.flatMap(s => s.campos);
+
+/* Los dos tipos de orden que puede capturar el ingeniero. Un borrador sin "tipo"
+   es una orden de trabajo: así siguen funcionando los guardados antes de Rev.45. */
+const FORMULARIOS = {
+  trabajo: { id: "trabajo", nombre: "Orden de trabajo", detalle: "Mantenimiento, calibración o reparación de un equipo",
+             etiqueta: "OT", secciones: SECCIONES, todos: TODOS },
+  renta:   { id: "renta", nombre: "Orden de renta", detalle: "Entrega, uso y retiro de un equipo en renta",
+             etiqueta: "Renta", secciones: SECCIONES_RENTA, todos: TODOS_RENTA }
+};
+const hayRenta = () => !!CONFIG.FORM_RENTA_ID;
+const tipoDe = b => (b && b.tipo === "renta") ? "renta" : "trabajo";
+
 /* ==========================================================
    4. UTILIDADES
    ========================================================== */
@@ -268,11 +344,19 @@ function nombreDeFormulario(ingeniero, mapa) {
   return igual || "";
 }
 
-function nuevaOrden(ingeniero) {
+function nuevaOrden(ingeniero, tipo) {
   const v = {};
-  TODOS.forEach(c => {
-    v[c.k] = c.tipo === "checks" ? [] : c.tipo === "fotos" ? [] : c.tipo === "tabla" ? [{ m: "", prog: "", desp: "", med: "" }] : c.tipo === "datetime" ? { fecha: hoyISO(), hora: horaISO() } : "";
+  const renta = tipo === "renta";
+  (renta ? TODOS_RENTA : TODOS).forEach(c => {
+    v[c.k] = c.tipo === "checks" ? [] : c.tipo === "fotos" ? [] : c.tipo === "tabla" ? [{ m: "", prog: "", desp: "", med: "" }] : c.tipo === "datetime" ? { fecha: hoyISO(), hora: horaISO() }
+      : c.tipo === "matriz" ? [c.columnas.map(() => "")] : c.tipo === "direccion" ? { calle: "", colonia: "", ciudad: "", cp: "" } : "";
   });
+  if (renta) {
+    v.inicioFecha = hoyISO(); v.inicioHora = horaISO();
+    v.ingenieroNombre = ingeniero || "";
+    return { id: uid(), tipo: "renta", folio: "IAR-" + Math.floor(10000 + Math.random() * 90000),
+      creada: Date.now(), actualizada: Date.now(), seccion: 0, valores: v };
+  }
   v.ingeniero = ingeniero || "";
   // El folio acompaña a la orden toda su vida. Es lo que permite al proxy saber
   // si un reintento corresponde a algo que ya se registró, y así no duplicarlo.
@@ -343,7 +427,7 @@ const fechaCorta = iso => {
 const NO_CAPTURAN = ["control_head", "control_text", "control_button", "control_pagebreak",
   "control_collapse", "control_divider", "control_image"];
 
-function resolverMapa(preguntas) {
+function resolverMapa(preguntas, todos) {
   // Los encabezados repiten el texto de la pregunta que anuncian ("ESTATUS DE
   // SEGUIMIENTO", "INGENIERO DE SERVICIO:"). Si se enlazan, el dato se escribe
   // en un título y se pierde: por eso quedan fuera de los candidatos.
@@ -351,16 +435,19 @@ function resolverMapa(preguntas) {
     .filter(q => NO_CAPTURAN.indexOf(q.type) === -1)
     .sort((a, b) => Number(a.order) - Number(b.order));
   const mapa = {}, faltantes = [];
-  TODOS.forEach(c => {
+  (todos || TODOS).forEach(c => {
     let cand;
-    if (c.m.nombre) {
-      cand = lista.filter(q => q.name === c.m.nombre);
+    const base = c.m.tipoQ ? lista.filter(q => q.type === c.m.tipoQ) : lista;
+    if (!c.m.nombre && !c.m.prefijo && !c.m.label) {
+      cand = base;                                       // solo por tipo de control
+    } else if (c.m.nombre) {
+      cand = base.filter(q => q.name === c.m.nombre);
     } else if (c.m.prefijo) {
-      cand = lista.filter(q => norm(q.text).startsWith(norm(c.m.prefijo)));
+      cand = base.filter(q => norm(q.text).startsWith(norm(c.m.prefijo)));
     } else {
       const L = norm(c.m.label);
-      cand = lista.filter(q => norm(q.text) === L);
-      if (!cand.length) cand = lista.filter(q => norm(q.text).startsWith(L) || norm(q.text).includes(L));
+      cand = base.filter(q => norm(q.text) === L);
+      if (!cand.length) cand = base.filter(q => norm(q.text).startsWith(L) || norm(q.text).includes(L));
     }
     const q = cand[(c.m.nth || 1) - 1];
     if (q) mapa[c.k] = { qid: q.qid, type: q.type, name: q.name, text: q.text,
@@ -372,9 +459,9 @@ function resolverMapa(preguntas) {
 }
 
 /* Convierte el borrador a { qid: valor } listo para el proxy */
-function construirPayload(valores, mapa) {
+function construirPayload(valores, mapa, todos) {
   const out = {};
-  TODOS.forEach(c => {
+  (todos || TODOS).forEach(c => {
     const m = mapa[c.k]; if (!m) return;
     let v = valores[c.k];
     if (c.tipo === "fotos") return;                       // se envían aparte
@@ -385,6 +472,18 @@ function construirPayload(valores, mapa) {
       if (!t.length) return; out[m.qid] = { tipo: "tabla", valor: t }; return;
     }
     if (c.tipo === "firma") { if (!v) return; out[m.qid] = { tipo: "firma", valor: v }; return; }
+    if (c.tipo === "fecha") { if (!v) return; out[m.qid] = { tipo: "datetime", valor: { fecha: v, hora: "" } }; return; }
+    if (c.tipo === "hora") { if (!v) return; out[m.qid] = { tipo: "hora", valor: v }; return; }
+    if (c.tipo === "direccion") {
+      const d = { ...(v || {}) };
+      if (!d.estado && valores.entidad) d.estado = valores.entidad;    // el estado sale de "Entidad"
+      if (!d.calle && !d.colonia && !d.ciudad && !d.cp) return;
+      out[m.qid] = { tipo: "direccion", valor: d }; return;
+    }
+    if (c.tipo === "matriz") {
+      const t = (v || []).filter(f => f.some(x => String(x || "").trim()));
+      if (!t.length) return; out[m.qid] = { tipo: "matriz", valor: t }; return;
+    }
     if (v !== "" && v != null) out[m.qid] = { tipo: "texto", valor: String(v) };
   });
   return out;
@@ -392,12 +491,14 @@ function construirPayload(valores, mapa) {
 
 // Un campo es obligatorio si lo marcamos aquí o si Jotform lo exige. Tener una
 // lista propia hacía que la app dejara pasar órdenes que el formulario rechazaba.
-function faltanRequeridos(valores, mapa) {
-  return TODOS.filter(c => {
+function faltanRequeridos(valores, mapa, todos) {
+  return (todos || TODOS).filter(c => {
     const exigido = c.req || (mapa && mapa[c.k] && mapa[c.k].obligatorio);
     if (!exigido) return false;
     const v = valores[c.k];
     if (c.tipo === "fotos") return !v || !v.length;
+    if (c.tipo === "direccion") return !v || !String(v.calle || "").trim();
+    if (c.tipo === "matriz") return !v || !v.some(f => f.some(x => String(x || "").trim()));
     if (c.tipo === "checks") {
       if (!v || !v.length) return true;
       const ops = mapa && mapa[c.k] && mapa[c.k].opciones;
@@ -421,6 +522,32 @@ function faltanRequeridos(valores, mapa) {
    convierten a base64 en el momento de enviarlas al servidor.
    Si el teléfono no admite Blob en IndexedDB (o se usa localStorage), se queda
    el formato anterior, dataUrl, que sigue siendo válido en todo el código. */
+/* El formulario pide el monto "con número y letra", pero en Jotform es un campo
+   numérico: la letra se muestra aquí como ayuda para revisar la cantidad. */
+function montoEnLetra(n) {
+  if (!isFinite(n) || n < 0 || n >= 1e9) return "";
+  const U = ["", "un", "dos", "tres", "cuatro", "cinco", "seis", "siete", "ocho", "nueve", "diez", "once", "doce",
+    "trece", "catorce", "quince", "dieciséis", "diecisiete", "dieciocho", "diecinueve", "veinte", "veintiún",
+    "veintidós", "veintitrés", "veinticuatro", "veinticinco", "veintiséis", "veintisiete", "veintiocho", "veintinueve"];
+  const D = ["", "", "", "treinta", "cuarenta", "cincuenta", "sesenta", "setenta", "ochenta", "noventa"];
+  const C = ["", "ciento", "doscientos", "trescientos", "cuatrocientos", "quinientos", "seiscientos",
+    "setecientos", "ochocientos", "novecientos"];
+  const cientos = x => {
+    if (x === 100) return "cien";
+    const c = Math.floor(x / 100), r = x % 100;
+    const dec = r < 30 ? U[r] : D[Math.floor(r / 10)] + (r % 10 ? " y " + U[r % 10] : "");
+    return [C[c], dec].filter(Boolean).join(" ");
+  };
+  const entero = Math.floor(n), cent = Math.round((n - entero) * 100);
+  const mill = Math.floor(entero / 1e6), miles = Math.floor((entero % 1e6) / 1000), resto = entero % 1000;
+  const partes = [];
+  if (mill) partes.push(mill === 1 ? "un millón" : cientos(mill) + " millones");
+  if (miles) partes.push(miles === 1 ? "mil" : cientos(miles) + " mil");
+  if (resto) partes.push(cientos(resto));
+  const txt = (partes.join(" ") || "cero") + (mill && !miles && !resto ? " de" : "");
+  return txt.charAt(0).toUpperCase() + txt.slice(1) + " pesos " + String(cent).padStart(2, "0") + "/100 M.N.";
+}
+
 async function comprimirImagen(file, max = 1400, calidad = 0.72) {
   const url = URL.createObjectURL(file);
   try {
@@ -488,6 +615,49 @@ function Campo({ c, valor, set, obligatorio, opciones }) {
         <input type="date" value={v.fecha || ""} onChange={e => set({ ...v, fecha: e.target.value })} />
         <input type="time" value={v.hora || ""} onChange={e => set({ ...v, hora: e.target.value })} />
       </div></div>;
+  }
+
+  if (c.tipo === "fecha" || c.tipo === "hora")
+    return <label className="f"><Etiqueta c={c} obligatorio={obligatorio} />
+      <input type={c.tipo === "fecha" ? "date" : "time"} value={valor || ""} onChange={e => set(e.target.value)} /></label>;
+
+  if (c.tipo === "numero")
+    return <label className="f"><Etiqueta c={c} obligatorio={obligatorio} />
+      <input type="text" inputMode="decimal" value={valor || ""} placeholder="0.00"
+        onChange={e => set(e.target.value.replace(/[^\d.]/g, "").replace(/(\..*)\./g, "$1"))} />
+      {valor && !isNaN(Number(valor)) && <span className="ayuda-campo">{montoEnLetra(Number(valor))}</span>}</label>;
+
+  if (c.tipo === "direccion") {
+    const d = valor || {};
+    const pon = (k, x) => set({ ...d, [k]: x });
+    return <div className="f"><Etiqueta c={c} obligatorio={obligatorio} />
+      <input type="text" placeholder="Calle y número" value={d.calle || ""} onChange={e => pon("calle", e.target.value)} autoComplete="off" />
+      <input type="text" className="mt8" placeholder="Colonia" value={d.colonia || ""} onChange={e => pon("colonia", e.target.value)} autoComplete="off" />
+      <div className="row mt8">
+        <input type="text" placeholder="Alcaldía o municipio" value={d.ciudad || ""} onChange={e => pon("ciudad", e.target.value)} autoComplete="off" />
+        <input type="text" inputMode="numeric" maxLength={5} placeholder="C.P." className="cp"
+          value={d.cp || ""} onChange={e => pon("cp", e.target.value.replace(/\D/g, ""))} />
+      </div></div>;
+  }
+
+  if (c.tipo === "matriz") {
+    const filas = valor && valor.length ? valor : [c.columnas.map(() => "")];
+    const cambiar = (i, j, x) => set(filas.map((f, a) => a === i ? f.map((y, b) => b === j ? x : y) : f));
+    return <div className="f"><Etiqueta c={c} obligatorio={obligatorio} />
+      {filas.map((f, i) => <div className="renglon-matriz" key={i}>
+        <div className="renglon-cab"><span>{c.columnas[0]} {i + 1}</span>
+          {filas.length > 1 && <button type="button" className="btn ghost cuadrado"
+            onClick={() => set(filas.filter((_, a) => a !== i))} aria-label="Quitar renglón">×</button>}</div>
+        <div className="rejilla-matriz">
+          {c.columnas.map((col, j) => <input key={j} type="text" placeholder={col} value={f[j] || ""}
+            inputMode={/PIEZAS/i.test(col) ? "numeric" : undefined}
+            className={j === 0 || j === c.columnas.length - 1 ? "ancho" : ""}
+            onChange={e => cambiar(i, j, e.target.value)} />)}
+        </div>
+      </div>)}
+      {filas.length < (c.maxFilas || 6) && <button type="button" className="btn ghost mt8"
+        onClick={() => set([...filas, c.columnas.map(() => "")])}>+ Agregar {c.columnas[0].toLowerCase()}</button>}
+    </div>;
   }
 
   if (c.tipo === "checks") {
@@ -646,7 +816,8 @@ function Identificacion({ onEntrar, usuarios, recargar, cargando, errorCarga }) 
   </main>;
 }
 
-function Formulario({ borrador, guardar, enviar, cancelar, mapa, faltantes }) {
+function Formulario({ borrador, guardar, enviar, cancelar, mapa, faltantes, def }) {
+  const SECS = (def || FORMULARIOS.trabajo).secciones, CAMPOS = (def || FORMULARIOS.trabajo).todos;
   // Si el nombre del usuario no está entre las opciones del formulario, la orden
   // será rechazada por Jotform: más vale avisarlo desde el primer paso.
   const opsIng = (mapa.ingeniero && mapa.ingeniero.opciones) || [];
@@ -665,14 +836,14 @@ function Formulario({ borrador, guardar, enviar, cancelar, mapa, faltantes }) {
 
   useEffect(() => { window.scrollTo({ top: 0, behavior: "instant" }); }, [sec]);
 
-  const S = SECCIONES[sec], ultima = sec === SECCIONES.length - 1;
+  const S = SECS[sec] || SECS[0], ultima = sec === SECS.length - 1;
   const sinNombre = !!opsIng.length && !!v.ingeniero && opsIng.indexOf(v.ingeniero) === -1;
   const sinMapear = S.campos.filter(c => faltantes.some(f => f.k === c.k));
 
   const intentarEnviar = () => {
-    const f = faltanRequeridos(v, mapa);
+    const f = faltanRequeridos(v, mapa, CAMPOS);
     if (f.length) {
-      setErrs(f); const i = SECCIONES.findIndex(s => s.campos.some(c => c.k === f[0].k)); setSec(i);
+      setErrs(f); const i = SECS.findIndex(s => s.campos.some(c => c.k === f[0].k)); setSec(i);
       // Si lo que falta está en este mismo paso, el paso no cambia y la pantalla
       // se quedaba abajo: el aviso de "Faltan campos" no se veía (Rev.44).
       window.scrollTo({ top: 0, behavior: "smooth" });
@@ -682,9 +853,10 @@ function Formulario({ borrador, guardar, enviar, cancelar, mapa, faltantes }) {
   };
 
   return <main>
-    <div className="steps">{SECCIONES.map((s, i) => <b key={s.id} className={i < sec ? "done" : i === sec ? "now" : ""} />)}</div>
+    <div className="steps">{SECS.map((s, i) => <b key={s.id} className={i < sec ? "done" : i === sec ? "now" : ""} />)}</div>
+    {hayRenta() && <div className={"tipo-orden " + tipoDe(borrador)}>{(def || FORMULARIOS.trabajo).nombre}</div>}
     <h2>{S.titulo}</h2>
-    <p className="lead">Paso {sec + 1} de {SECCIONES.length} · se guarda solo mientras escribe</p>
+    <p className="lead">Paso {sec + 1} de {SECS.length} · se guarda solo mientras escribe</p>
 
     {!!errs.length && <div className="note bad">Faltan campos obligatorios: {errs.map(e => e.et).join(", ")}.</div>}
     {borrador.asignacion && sec === 0 && <div className="note">
@@ -700,10 +872,11 @@ function Formulario({ borrador, guardar, enviar, cancelar, mapa, faltantes }) {
     </div>}
     {!!sinMapear.length && <div className="note">Estos campos no se encontraron en el formulario de Jotform y no se enviarán: {sinMapear.map(c => c.et).join(", ")}. Revise la pestaña Ajustes.</div>}
 
-    <div className="card">
-      {S.campos.map(c => <Campo key={c.k} c={c} valor={v[c.k]} set={val => set(c.k, val)}
-        obligatorio={!!(mapa[c.k] && mapa[c.k].obligatorio)}
-        opciones={mapa[c.k] && mapa[c.k].opciones} />)}
+    <div className="card rejilla">
+      {S.campos.map(c => <div key={c.k} className={"celda" + (c.mitad ? " mitad" : "")}>
+        <Campo c={c} valor={v[c.k]} set={val => set(c.k, val)}
+          obligatorio={!!(mapa[c.k] && mapa[c.k].obligatorio)}
+          opciones={mapa[c.k] && mapa[c.k].opciones} /></div>)}
     </div>
 
     <div className="actions">
@@ -720,12 +893,25 @@ function Formulario({ borrador, guardar, enviar, cancelar, mapa, faltantes }) {
   </main>;
 }
 
-function ListaBorradores({ borradores, abrir, borrar, nuevo, mapa, enviar, cola, enviando, reintentar,
+function ListaBorradores({ borradores, abrir, borrar, nuevo, datosForm, enviar, cola, enviando, reintentar,
   devolver, deOtros, verTodos, alternarTodos }) {
+  const [eligiendo, setEligiendo] = useState(false);
+  const etiqueta = b => hayRenta() && <span className={"tag tipo " + tipoDe(b)}>{FORMULARIOS[tipoDe(b)].etiqueta}</span>;
   return <main>
     <h2>Borradores</h2>
     <p className="lead">Órdenes sin terminar guardadas en este teléfono. Nada se pierde si cierra la app o se queda sin señal.</p>
-    <button className="btn primary block mb14" onClick={nuevo}>Nueva orden de trabajo</button>
+    {/* Con dos formularios, el ingeniero elige primero qué orden va a capturar */}
+    {!hayRenta()
+      ? <button className="btn primary block mb14" onClick={() => nuevo("trabajo")}>Nueva orden de trabajo</button>
+      : !eligiendo
+        ? <button className="btn primary block mb14" onClick={() => setEligiendo(true)}>Nueva orden</button>
+        : <div className="eleccion mb14">
+            <div className="eleccion-tit">¿Qué orden va a capturar?</div>
+            {["trabajo", "renta"].map(t => <button key={t} className={"opcion-orden " + t}
+              onClick={() => { setEligiendo(false); nuevo(t); }}>
+              <b>{FORMULARIOS[t].nombre}</b><span>{FORMULARIOS[t].detalle}</span></button>)}
+            <button className="btn ghost block" onClick={() => setEligiendo(false)}>Cancelar</button>
+          </div>}
 
     {/* Un borrador capturado con otro usuario nunca debe parecer perdido */}
     {!!deOtros && <div className="note">
@@ -742,7 +928,7 @@ function ListaBorradores({ borradores, abrir, borrar, nuevo, mapa, enviar, cola,
         {enviando ? <><span className="spin" /> Enviando…</> : "Intentar ahora"}</button>
       {cola.map(o => <div className="item" key={o.id}>
         <div className="body">
-          <div className="t">{o.valores.equipo || "Equipo"}</div>
+          <div className="t">{etiqueta(o)}{o.valores.equipo || "Equipo"}</div>
           <div className="s">{o.folio ? o.folio + " · " : ""}{o.valores.unidad || "—"}<br />
             {o.error ? <span className="txt-alerta">{o.error}</span> : "En espera de conexión"}</div>
         </div>
@@ -754,12 +940,13 @@ function ListaBorradores({ borradores, abrir, borrar, nuevo, mapa, enviar, cola,
     {!borradores.length
       ? <div className="empty">No hay borradores.<br />Empiece una orden y quedará aquí en cuanto escriba el primer dato.</div>
       : borradores.map(b => {
-        const v = b.valores, pend = faltanRequeridos(v, mapa).length;
+        const F = datosForm(tipoDe(b)), v = b.valores, pend = faltanRequeridos(v, F.mapa, F.def.todos).length;
         return <div className="item col" key={b.id}>
           <div className="fila-item">
             <div className="body clic" onClick={() => abrir(b)}>
-              <div className="t">{v.equipo || "Equipo sin capturar"}</div>
-              <div className="s">{v.unidad || "Unidad sin capturar"} · {v.inventario || "s/inv"}<br />
+              <div className="t">{etiqueta(b)}{v.equipo || "Equipo sin capturar"}</div>
+              <div className="s">{v.unidad || "Unidad sin capturar"} · {tipoDe(b) === "renta"
+                ? (v.serie ? "serie " + v.serie : "s/serie") : (v.inventario || "s/inv")}<br />
               {b.folio ? b.folio + " · " : ""}Editado {fmtFecha(b.actualizada)}</div>
             {b.asignacion && !b.asignacion.cancelada && <div className="s mt5">
               <span className="tag asg">Asignada{b.asignacion.fechaProgramada ? " · " + fechaCorta(b.asignacion.fechaProgramada) : ""}</span>
@@ -819,7 +1006,7 @@ function MisEnvios({ ingeniero, enviados, cargar, cargando, error }) {
     if (hospital && (s.unidad || "").trim() !== hospital) return false;
     if (texto) {
       const t = texto.toLowerCase();
-      const campos = [s.equipo, s.unidad, s.inventario, s.folio].join(" ").toLowerCase();
+      const campos = [s.equipo, s.unidad, s.inventario, s.serie, s.folio].join(" ").toLowerCase();
       if (campos.indexOf(t) === -1) return false;
     }
     return true;
@@ -830,7 +1017,7 @@ function MisEnvios({ ingeniero, enviados, cargar, cargando, error }) {
   const abrir = async s => {
     setAbierta(s); setDetalle(null); setErrDetalle(""); setCargandoDetalle(true);
     try {
-      const d = await Api.get({ action: "detalle", fila: s.fila });
+      const d = await Api.get({ action: "detalle", fila: s.fila, form: s.form || "trabajo" });
       setDetalle(d.respuestas || []);
     } catch (e) { setErrDetalle("No se pudo abrir el detalle: " + e.message); }
     setCargandoDetalle(false);
@@ -894,10 +1081,11 @@ function MisEnvios({ ingeniero, enviados, cargar, cargando, error }) {
     {!cargando && enviados.length > 0 && !lista.length &&
       <div className="empty">Ninguna orden coincide con los filtros.</div>}
 
-    {lista.map(s => <div className="item clic" key={s.fila} onClick={() => abrir(s)}>
+    {lista.map(s => <div className="item clic" key={(s.form || "trabajo") + s.fila} onClick={() => abrir(s)}>
       <div className="body">
-        <div className="t">{s.equipo || "Equipo"}</div>
-        <div className="s">{s.folio ? s.folio + " · " : ""}{s.unidad || "—"} · {s.inventario || "s/inv"}<br />
+        <div className="t">{s.form === "renta" && <span className="tag tipo renta">Renta</span>}{s.equipo || "Equipo"}</div>
+        <div className="s">{s.folio ? s.folio + " · " : ""}{s.unidad || "—"} · {s.form === "renta"
+          ? (s.serie ? "serie " + s.serie : "s/serie") : (s.inventario || "s/inv")}<br />
           {s.created_at ? new Date(s.created_at).toLocaleString("es-MX") : "sin fecha"}</div>
       </div>
       <span className="tag ok">enviada</span>
@@ -1572,7 +1760,8 @@ function Chat({ ingeniero, sesion, esCoordinador, hilos, cargarHilos, cargando, 
 }
 
 function Ajustes({ ingeniero, salir, esquema, faltantes, mapa, recargar, estadoProxy, ultimaRevision,
-  rol, verUsuarios, cambiarNip }) {
+  rol, verUsuarios, cambiarNip, renta }) {
+  const formularios = [{ def: FORMULARIOS.trabajo, esquema, mapa, faltantes }].concat(hayRenta() && renta ? [renta] : []);
   const [prueba, setPrueba] = useState(null);
   const [nips, setNips] = useState(null);
   const [cambiando, setCambiando] = useState(false);
@@ -1617,13 +1806,15 @@ function Ajustes({ ingeniero, salir, esquema, faltantes, mapa, recargar, estadoP
         <div><b>Usuario:</b> {ingeniero}</div>
         <div><b>Rol:</b> {rol === "administrador" ? "Administrador"
           : rol === "visualizador" ? "Visualizador" : "Operador"}</div>
-        <div><b>Formulario:</b> {CONFIG.FORM_ID}</div>
+        <div><b>Formulario{hayRenta() ? " de trabajo" : ""}:</b> {CONFIG.FORM_ID}</div>
+        {hayRenta() && <div><b>Formulario de renta:</b> {CONFIG.FORM_RENTA_ID}</div>}
         <div><b>Versión de la app:</b> {CONFIG.BUILD || "Rev.01"}</div>
         <div><b>Proxy en uso:</b> …{String(CONFIG.PROXY_URL).slice(-18)}</div>
         <div><b>Estado del proxy:</b> {estadoProxy}</div>
         <div><b>Última revisión:</b> {ultimaRevision ? new Date(ultimaRevision).toLocaleString("es-MX") : "sin revisar"}</div>
         <div><b>Almacenamiento:</b> {Store.modo}</div>
-        <div><b>Preguntas leídas:</b> {esquema ? Object.keys(esquema).length : 0}</div>
+        <div><b>Preguntas leídas:</b> {esquema ? Object.keys(esquema).length : 0}
+          {hayRenta() && renta ? " · renta " + (renta.esquema ? Object.keys(renta.esquema).length : 0) : ""}</div>
       </div>
       <div className="actions mt12">
         <button className="btn" onClick={recargar}>Releer formulario</button>
@@ -1666,16 +1857,20 @@ function Ajustes({ ingeniero, salir, esquema, faltantes, mapa, recargar, estadoP
       {prueba && <pre className="diagnostico">{prueba.texto}</pre>}
     </div>
 
-    <h2 className="mt20">Correspondencia de campos</h2>
-    {faltantes.length
-      ? <div className="note bad">{faltantes.length} campo(s) sin localizar en el formulario: {faltantes.map(f => f.et).join(", ")}. Esos datos no se envían.</div>
-      : <div className="note">Los {Object.keys(mapa).length} campos de la app quedaron enlazados al formulario.</div>}
-    <div className="card"><div className="kv">
-      {TODOS.map(c => {
-        const m = mapa[c.k];
-        return <div key={c.k}><b>{c.et}</b> → {m ? `qid ${m.qid} · ${m.type.replace("control_", "")}` : <span className="txt-alerta">sin enlazar</span>}</div>;
-      })}
-    </div></div>
+    {formularios.map(F => <div key={F.def.id}>
+      <h2 className="mt20">Correspondencia de campos{formularios.length > 1 ? " · " + F.def.nombre : ""}</h2>
+      {!F.esquema
+        ? <div className="note bad">Todavía no se ha leído este formulario. Toque "Releer formulario" con señal.</div>
+        : F.faltantes.length
+          ? <div className="note bad">{F.faltantes.length} campo(s) sin localizar en el formulario: {F.faltantes.map(f => f.et).join(", ")}. Esos datos no se envían.</div>
+          : <div className="note">Los {Object.keys(F.mapa).length} campos de la app quedaron enlazados al formulario.</div>}
+      <div className="card"><div className="kv">
+        {F.def.todos.map(c => {
+          const m = F.mapa[c.k];
+          return <div key={c.k}><b>{c.et}</b> → {m ? `qid ${m.qid} · ${m.type.replace("control_", "")}` : <span className="txt-alerta">sin enlazar</span>}</div>;
+        })}
+      </div></div>
+    </div>)}
   </main>;
 }
 
@@ -1691,6 +1886,7 @@ function App() {
   const [cola, setCola] = useState([]);
   const [enviados, setEnviados] = useState([]);
   const [esquema, setEsquema] = useState(null);
+  const [esquemaRenta, setEsquemaRenta] = useState(null);
   const [estadoProxy, setEstadoProxy] = useState("sin verificar");
   const [online, setOnline] = useState(navigator.onLine);
   const [enviando, setEnviando] = useState(false);
@@ -1726,6 +1922,11 @@ function App() {
   const [leidos, setLeidos] = useState({});
 
   const { mapa, faltantes } = useMemo(() => esquema ? resolverMapa(esquema) : { mapa: {}, faltantes: TODOS }, [esquema]);
+  const renta = useMemo(() => ({ def: FORMULARIOS.renta, esquema: esquemaRenta,
+    ...(esquemaRenta ? resolverMapa(esquemaRenta, TODOS_RENTA) : { mapa: {}, faltantes: TODOS_RENTA }) }), [esquemaRenta]);
+  // Todo lo que depende del formulario sale de aquí según el tipo de la orden
+  const datosForm = useCallback(t => t === "renta" ? renta
+    : { def: FORMULARIOS.trabajo, esquema, mapa, faltantes }, [renta, esquema, mapa, faltantes]);
 
   const avisar = (msg, malo) => { setToast({ msg, malo }); setTimeout(() => setToast(null), 3600); };
 
@@ -1735,7 +1936,22 @@ function App() {
     setCola(o.sort((a, b) => a.creada - b.creada));
   }, []);
 
+  // El formulario de renta se lee aparte: si falla, la orden de trabajo sigue igual.
+  const leerEsquemaRenta = useCallback(async (silencio) => {
+    if (!hayRenta()) return;
+    try {
+      const d = await Api.get(silencio ? { action: "schema", form: "renta" } : { action: "schema", form: "renta", fresco: "1" });
+      setEsquemaRenta(d.questions);
+      await Store.put("meta", { id: "schema:renta", questions: d.questions, ts: Date.now() });
+    } catch (e) {
+      const c = await Store.one("meta", "schema:renta");
+      if (c) setEsquemaRenta(c.questions);
+      if (!silencio) avisar("Formulario de renta: " + e.message, true);
+    }
+  }, []);
+
   const leerEsquema = useCallback(async (silencio) => {
+    leerEsquemaRenta(silencio);
     try {
       // Al pedirlo a mano se salta la caché del proxy: es lo que se espera de
       // un botón llamado "Releer formulario".
@@ -1760,6 +1976,8 @@ function App() {
       if (g && ses0 && ses0.token && Date.now() - ses0.ts < 12 * 3600 * 1000) setIngeniero(g.valor);
       const c = await Store.one("meta", "schema");
       if (c) setEsquema(c.questions);
+      const cr = await Store.one("meta", "schema:renta");
+      if (cr) setEsquemaRenta(cr.questions);
       const vistos = await Store.one("meta", "avisosVistos");
       if (vistos) setAvisosVistos(vistos.ts || 0);
       const ses = await Store.one("meta", "sesion");
@@ -1953,7 +2171,8 @@ function App() {
   };
 
   const enviarUno = async o => {
-    const payload = construirPayload(o.valores, mapa);
+    const t = tipoDe(o), F = datosForm(t);
+    const payload = construirPayload(o.valores, F.mapa, F.def.todos);
     // Los borradores creados antes de esta versión no traen folio: se les asigna
     // uno y se guarda, para que un reintento posterior tampoco duplique.
     if (!o.folio) {
@@ -1962,8 +2181,8 @@ function App() {
     }
     const fotos = await Promise.all((o.valores.fotos || []).map(async f =>
       ({ nombre: f.nombre, dataUrl: f.blob ? await aDataUrl(f.blob) : f.dataUrl })));
-    const campoFotos = mapa.fotos ? mapa.fotos.qid : null;
-    const r = await Api.post({ action: "submit", answers: payload, fotos, campoFotos, cliente: o.id, folio: o.folio,
+    const campoFotos = F.mapa.fotos ? F.mapa.fotos.qid : null;
+    const r = await Api.post({ action: "submit", form: t, answers: payload, fotos, campoFotos, cliente: o.id, folio: o.folio,
       asignacionId: o.asignacion ? o.asignacion.id : "", sesion });
     return r;
   };
@@ -1972,10 +2191,13 @@ function App() {
     if (enviando) return;
     const pend = await Store.all("outbox");
     if (!pend.length) { if (manual) avisar("No hay nada por enviar"); return; }
-    if (!esquema) { if (manual) avisar("Primero hay que leer el formulario (Ajustes)", true); return; }
+    const listas = pend.filter(o => datosForm(tipoDe(o)).esquema);
+    if (!listas.length) { if (manual) avisar("Primero hay que leer el formulario (Ajustes)", true); return; }
     setEnviando(true);
     let ok = 0, fail = 0, devueltas = 0; const avisos = [];
-    for (const o of pend.sort((a, b) => a.creada - b.creada)) {
+    // Una orden cuyo formulario aún no se ha leído espera en la cola sin tocarse
+    fail += pend.length - listas.length;
+    for (const o of listas.sort((a, b) => a.creada - b.creada)) {
       try {
         const r = await enviarUno(o);
         await Store.del("outbox", o.id);
@@ -2010,12 +2232,13 @@ function App() {
     else if (ok && !fail) avisar(ok === 1 ? "Orden enviada a Jotform" : ok + " órdenes enviadas");
     else if (ok && fail) avisar(`${ok} enviada(s), ${fail} espera(n) señal`, true);
     else if (fail) avisar("Sin señal. La orden espera y se enviará al reconectar.", true);
-  }, [enviando, esquema, mapa, refrescar, sesion]);
+  }, [enviando, datosForm, refrescar, sesion]);
 
-  useEffect(() => { if (online && listo && esquema) procesarCola(false); }, [online, listo, esquema]);
+  useEffect(() => { if (online && listo && (esquema || esquemaRenta)) procesarCola(false); }, [online, listo, esquema, esquemaRenta]);
 
   // Corrige el nombre guardado si difiere del que espera el formulario
   const ajustarIngeniero = b => {
+    if (tipoDe(b) === "renta") return b;      // en renta el nombre es texto libre
     const bueno = nombreDeFormulario(b.valores.ingeniero || ingeniero, mapa);
     if (!bueno || bueno === b.valores.ingeniero) return b;
     return { ...b, valores: { ...b.valores, ingeniero: bueno } };
@@ -2307,7 +2530,7 @@ function App() {
     </header>
 
     {editando
-      ? <Formulario borrador={editando} mapa={mapa} faltantes={faltantes}
+      ? <Formulario borrador={editando} {...datosForm(tipoDe(editando))}
           guardar={guardarBorrador} enviar={encolar} cancelar={() => { setEditando(null); refrescar(); }} />
       : tabActual === "tablero" ? <Tablero tareas={tareas} cargar={cargarTareas} cargando={cargandoTareas}
           error={errTareas} esAdmin={esCoordinador} yo={ingeniero} guardar={guardarTarea}
@@ -2316,12 +2539,13 @@ function App() {
           enviarUbicaciones={enviarUbicaciones} enviandoUbic={enviandoUbic}
           ingenieros={(mapa.ingeniero && mapa.ingeniero.opciones) || INGENIEROS} />
       : tabActual === "borradores" ? <ListaBorradores borradores={verTodos ? borradores : misBorradores}
-          mapa={mapa} enviar={encolar} deOtros={deOtros} verTodos={verTodos}
+          datosForm={datosForm} enviar={encolar} deOtros={deOtros} verTodos={verTodos}
           alternarTodos={() => setVerTodos(v => !v)}
           cola={cola} enviando={enviando} reintentar={() => procesarCola(true)}
           devolver={async id => { const o = await Store.one("outbox", id); await Store.del("outbox", id); if (o) await Store.put("drafts", { ...o, actualizada: Date.now() }); await refrescar(); avisar("Regresó a borradores"); }}
           abrir={b => setEditando(ajustarIngeniero(b))}
-          nuevo={() => setEditando(nuevaOrden(nombreDeFormulario(ingeniero, mapa)))}
+          nuevo={t => setEditando(t === "renta" ? nuevaOrden(ingeniero, "renta")
+            : nuevaOrden(nombreDeFormulario(ingeniero, mapa)))}
           borrar={borrarBorrador} />
       : tabActual === "envios" ? <MisEnvios ingeniero={ingeniero} enviados={enviados} cargar={cargarEnvios} cargando={cargandoEnvios} error={errEnvios} />
       : tabActual === "avisos" ? <Avisos ingeniero={ingeniero} avisos={avisos} cargar={cargarAvisos}
@@ -2336,7 +2560,7 @@ function App() {
           mensajes={mensajes} enviarMensaje={enviarMensaje} enviando={enviandoMsj}
           pendientes={colaChat.length} noLeidos={noLeidosPorHilo} finalizar={finalizarHilo}
           ingenieros={(mapa.ingeniero && mapa.ingeniero.opciones) || INGENIEROS} reasignar={reasignarHilo} />
-      : <Ajustes ingeniero={ingeniero} esquema={esquema} mapa={mapa} faltantes={faltantes}
+      : <Ajustes ingeniero={ingeniero} esquema={esquema} mapa={mapa} faltantes={faltantes} renta={renta}
           estadoProxy={estadoProxy} ultimaRevision={ultimaRevision} recargar={() => leerEsquema(false)}
           rol={rol} verUsuarios={() => setTab("usuarios")} cambiarNip={cambiarMiNip}
           salir={async () => {
