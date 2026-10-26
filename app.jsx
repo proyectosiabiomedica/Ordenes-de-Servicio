@@ -25,9 +25,22 @@ const Store = (() => {
       setTimeout(() => res(null), 6000);
     });
   }
+  let aceptaBlob = false;
+  async function probarBlob() {
+    // Algunos Safari viejos aceptan IndexedDB pero no guardan Blob: se prueba una vez
+    try {
+      await new Promise((res, rej) => {
+        const t = db.transaction("meta", "readwrite"), st = t.objectStore("meta");
+        st.put({ id: "__blob", b: new Blob(["ok"], { type: "text/plain" }) });
+        st.delete("__blob");
+        t.oncomplete = res; t.onerror = () => rej(t.error); t.onabort = () => rej(t.error);
+      });
+      aceptaBlob = typeof Blob !== "undefined";
+    } catch (e) { aceptaBlob = false; }
+  }
   async function init() {
     db = await abrir();
-    if (db) { modo = "indexeddb"; return modo; }
+    if (db) { modo = "indexeddb"; await probarBlob(); return modo; }
     try { localStorage.setItem("__t", "1"); localStorage.removeItem("__t"); modo = "localstorage"; }
     catch (e) { modo = "memoria"; }
     return modo;
@@ -44,7 +57,7 @@ const Store = (() => {
   function tx(s, m) { return db.transaction(s, m).objectStore(s); }
 
   return {
-    init, get modo() { return modo; },
+    init, get modo() { return modo; }, get aceptaBlob() { return aceptaBlob; },
     async put(s, obj) {
       if (modo === "indexeddb") return new Promise((res, rej) => { const r = tx(s, "readwrite").put(obj); r.onsuccess = () => res(obj); r.onerror = () => rej(r.error); });
       if (modo === "localstorage") { localStorage.setItem(lsKey(s, obj.id), JSON.stringify(obj)); return obj; }
@@ -232,9 +245,9 @@ const SECCIONES = [
   { k:"ingeniero", et:"Ingeniero de servicio", tipo:"select", req:true, opciones:INGENIEROS, m:{ label:"INGENIERO DE SERVICIO:" } },
   { k:"firmaIng", et:"Firma del ingeniero", tipo:"firma", req:true, m:{ label:"Firma", nth:1 } },
   { k:"responsable", et:"Responsable de área", tipo:"texto", m:{ label:"RESPONSABLE DE AREA" } },
-  { k:"firmaResp", et:"Firma del responsable", tipo:"firma", m:{ label:"Firma", nth:2 } },
+  { k:"firmaResp", et:"Firma del responsable", tipo:"firma", req:true, m:{ label:"Firma", nth:2 } },
   { k:"jefeBio", et:"Jefe de biomédica", tipo:"texto", m:{ label:"JEFE DE BIOMÉDICA" } },
-  { k:"firmaJefe", et:"Firma del jefe de biomédica", tipo:"firma", m:{ label:"Firma", nth:3 } },
+  { k:"firmaJefe", et:"Firma del jefe de biomédica", tipo:"firma", req:true, m:{ label:"Firma", nth:3 } },
 ]},
 ];
 const TODOS = SECCIONES.flatMap(s => s.campos);
@@ -402,14 +415,41 @@ function faltanRequeridos(valores, mapa) {
   });
 }
 
+/* Fotos (Rev.43): se guardan como archivo (Blob) en IndexedDB, no como texto
+   base64. Ocupan un 33% menos, no se copian como cadenas gigantes cada vez que se
+   autoguarda el borrador y la miniatura se muestra sin decodificar texto. Solo se
+   convierten a base64 en el momento de enviarlas al servidor.
+   Si el teléfono no admite Blob en IndexedDB (o se usa localStorage), se queda
+   el formato anterior, dataUrl, que sigue siendo válido en todo el código. */
 async function comprimirImagen(file, max = 1400, calidad = 0.72) {
-  const dataUrl = await new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = rej; r.readAsDataURL(file); });
-  const img = await new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = dataUrl; });
-  const esc = Math.min(1, max / Math.max(img.width, img.height));
-  const cv = document.createElement("canvas");
-  cv.width = Math.round(img.width * esc); cv.height = Math.round(img.height * esc);
-  cv.getContext("2d").drawImage(img, 0, 0, cv.width, cv.height);
-  return cv.toDataURL("image/jpeg", calidad);
+  const url = URL.createObjectURL(file);
+  try {
+    const img = await new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = url; });
+    const esc = Math.min(1, max / Math.max(img.width, img.height));
+    const cv = document.createElement("canvas");
+    cv.width = Math.round(img.width * esc); cv.height = Math.round(img.height * esc);
+    cv.getContext("2d").drawImage(img, 0, 0, cv.width, cv.height);
+    if (Store.aceptaBlob && cv.toBlob) {
+      const blob = await new Promise(res => cv.toBlob(res, "image/jpeg", calidad));
+      if (blob) return { blob };
+    }
+    return { dataUrl: cv.toDataURL("image/jpeg", calidad) };
+  } finally { URL.revokeObjectURL(url); }
+}
+
+function aDataUrl(blob) {
+  return new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = rej; r.readAsDataURL(blob); });
+}
+
+/** Miniatura de una foto en cualquiera de los dos formatos. */
+function Miniatura({ foto }) {
+  const [src, setSrc] = useState(foto.dataUrl || "");
+  useEffect(() => {
+    if (!foto.blob) { setSrc(foto.dataUrl || ""); return; }
+    const u = URL.createObjectURL(foto.blob); setSrc(u);
+    return () => URL.revokeObjectURL(u);
+  }, [foto]);
+  return src ? <img src={src} alt="" /> : null;
 }
 
 /* ==========================================================
@@ -436,7 +476,7 @@ function Campo({ c, valor, set, obligatorio, opciones }) {
         <option value="">Seleccione</option>
         {ops.map(o => <option key={o} value={o}>{o}</option>)}
       </select>
-      {invalido && <span style={{ display: "block", marginTop: 6, fontSize: 12, color: "var(--alert)" }}>
+      {invalido && <span className="error-campo">
         "{valor}" ya no es una opción válida del formulario. Elija una de la lista.
       </span>}</label>;
   }
@@ -463,7 +503,7 @@ function Campo({ c, valor, set, obligatorio, opciones }) {
           <button key={o} type="button" className={"chip" + ((c.negativas || []).some(n => norm(n) === norm(o)) ? " neg" : "")}
             aria-pressed={sel.includes(o)} onClick={() => alternar(o)}>{o.replace(/\s+/g, " ").trim()}</button>)}
       </div>
-      {!!sueltas.length && <span style={{ display: "block", marginTop: 6, fontSize: 12, color: "var(--alert)" }}>
+      {!!sueltas.length && <span className="error-campo">
         Hay opciones marcadas que ya no existen en el formulario. Vuelva a marcarlas arriba.
       </span>}</div>;
   }
@@ -480,11 +520,11 @@ function Campo({ c, valor, set, obligatorio, opciones }) {
             <td><input type="text" value={f.prog} onChange={e => cambiar(i, "prog", e.target.value)} /></td>
             <td><input type="text" value={f.desp} onChange={e => cambiar(i, "desp", e.target.value)} /></td>
             <td><input type="text" value={f.med} onChange={e => cambiar(i, "med", e.target.value)} /></td>
-            <td><button type="button" className="btn ghost" style={{ padding: "8px 10px" }}
+            <td><button type="button" className="btn ghost cuadrado"
               onClick={() => set(filas.filter((_, j) => j !== i))}>×</button></td>
           </tr>)}</tbody>
       </table>
-      <button type="button" className="btn ghost" style={{ marginTop: 8 }}
+      <button type="button" className="btn ghost mt8"
         onClick={() => set([...filas, { m: "", prog: "", desp: "", med: "" }])}>+ Agregar medición</button>
     </div>;
   }
@@ -522,7 +562,7 @@ function FirmaCampo({ c, valor, set, obligatorio }) {
       <canvas ref={ref} onPointerDown={abajo} onPointerMove={mover} onPointerUp={arriba} onPointerLeave={arriba} />
       {!valor && <div className="sighint">Firme aquí</div>}
     </div>
-    <button type="button" className="btn ghost" style={{ marginTop: 8 }} onClick={limpiar}>Borrar firma</button>
+    <button type="button" className="btn ghost mt8" onClick={limpiar}>Borrar firma</button>
   </div>;
 }
 
@@ -534,16 +574,16 @@ function FotosCampo({ c, valor, set, obligatorio }) {
     if (!files.length) return;
     setCargando(true);
     const nuevas = [];
-    for (const f of files) { try { nuevas.push({ id: uid(), nombre: f.name, dataUrl: await comprimirImagen(f) }); } catch (err) {} }
+    for (const f of files) { try { nuevas.push({ id: uid(), nombre: f.name, ...(await comprimirImagen(f)) }); } catch (err) {} }
     set([...fotos, ...nuevas]); setCargando(false);
   };
   return <div className="f"><Etiqueta c={c} obligatorio={obligatorio} />
-    <label className="btn ghost block" style={{ cursor: "pointer" }}>
+    <label className="btn ghost block clic">
       {cargando ? <span className="spin" /> : "Agregar fotos"}
-      <input type="file" accept="image/*" multiple onChange={agregar} style={{ display: "none" }} />
+      <input className="oculto" type="file" accept="image/*" multiple onChange={agregar} />
     </label>
     {!!fotos.length && <div className="thumbs">{fotos.map(f =>
-      <div className="thumb" key={f.id}><img src={f.dataUrl} alt="" />
+      <div className="thumb" key={f.id}><Miniatura foto={f} />
         <button type="button" onClick={() => set(fotos.filter(x => x.id !== f.id))}>×</button></div>)}</div>}
   </div>;
 }
@@ -567,11 +607,11 @@ function Identificacion({ onEntrar, usuarios, recargar, cargando, errorCarga }) 
   return <main>
     <div className="center">
       <img src="icon-192.png" alt="" className="logo-acceso" onError={e => { e.currentTarget.style.display = "none"; }} />
-      <div style={{ letterSpacing: ".2em", fontSize: 12, color: "var(--muted)", textTransform: "uppercase" }}>Ingenieros Asociados</div>
-      <h1 style={{ fontSize: 26, margin: 0, letterSpacing: "-.01em" }}>Orden de Trabajo</h1>
-      <p className="lead" style={{ maxWidth: 320 }}>Elija su usuario y escriba su NIP de 4 dígitos.</p>
+      <div className="acceso-marca">Ingenieros Asociados</div>
+      <h1 className="acceso-titulo">Orden de Trabajo</h1>
+      <p className="lead acceso-lead">Elija su usuario y escriba su NIP de 4 dígitos.</p>
 
-      <div style={{ width: "100%", maxWidth: 380 }}>
+      <div className="acceso-form">
         <select value={n} onChange={e => { setN(e.target.value); setErr(""); }}>
           <option value="">Seleccione usuario</option>
           {/* Primera apertura sin lista guardada: se muestran los ingenieros conocidos
@@ -581,24 +621,24 @@ function Identificacion({ onEntrar, usuarios, recargar, cargando, errorCarga }) 
             .map(u => <option key={u.nombre} value={u.nombre}>{u.nombre}</option>)}
         </select>
 
-        <input type="password" inputMode="numeric" maxLength={4} value={nip} className="nip"
+        <input type="password" inputMode="numeric" maxLength={4} value={nip} className="nip mt12"
           onChange={e => setNip(e.target.value.replace(/\D/g, ""))}
-          placeholder="• • • •" style={{ marginTop: 12 }} />
+          placeholder="• • • •" />
 
-        {err && <div className="note bad" style={{ marginTop: 10 }}>{err}</div>}
+        {err && <div className="note bad mt10">{err}</div>}
 
-        <button className="btn primary block" style={{ marginTop: 12 }}
+        <button className="btn primary block mt12"
           disabled={!n || nip.length !== 4 || validando} onClick={entrar}>
           {validando ? <span className="spin" /> : "Entrar"}</button>
 
         {!usuarios.length && <>
           {cargando
-            ? <div className="note" style={{ marginTop: 12 }}><span className="spin" /> Conectando con el servidor… con datos móviles la primera vez puede tardar hasta un minuto.</div>
-            : errorCarga && <div className="note bad" style={{ marginTop: 12 }}>
+            ? <div className="note mt12"><span className="spin" /> Conectando con el servidor… con datos móviles la primera vez puede tardar hasta un minuto.</div>
+            : errorCarga && <div className="note bad mt12">
                 No se pudo obtener la lista de usuarios.<br />
-                <span style={{ fontFamily: "var(--mono)", fontSize: 12 }}>{errorCarga}</span>
+                <span className="mono12">{errorCarga}</span>
               </div>}
-          <button className="btn ghost block" style={{ marginTop: 10 }} onClick={recargar} disabled={cargando}>
+          <button className="btn ghost block mt10" onClick={recargar} disabled={cargando}>
             {cargando ? <span className="spin" /> : "Reintentar"}</button>
         </>}
       </div>
@@ -631,7 +671,13 @@ function Formulario({ borrador, guardar, enviar, cancelar, mapa, faltantes }) {
 
   const intentarEnviar = () => {
     const f = faltanRequeridos(v, mapa);
-    if (f.length) { setErrs(f); const i = SECCIONES.findIndex(s => s.campos.some(c => c.k === f[0].k)); setSec(i); return; }
+    if (f.length) {
+      setErrs(f); const i = SECCIONES.findIndex(s => s.campos.some(c => c.k === f[0].k)); setSec(i);
+      // Si lo que falta está en este mismo paso, el paso no cambia y la pantalla
+      // se quedaba abajo: el aviso de "Faltan campos" no se veía (Rev.44).
+      window.scrollTo({ top: 0, behavior: "smooth" });
+      return;
+    }
     setErrs([]); enviar({ ...borrador, valores: v, seccion: sec, actualizada: Date.now() });
   };
 
@@ -667,7 +713,7 @@ function Formulario({ borrador, guardar, enviar, cancelar, mapa, faltantes }) {
         : <button className="btn primary" onClick={() => setSec(sec + 1)}>Siguiente</button>}
     </div>
     {/* Salir está disponible en cualquier paso: lo capturado ya quedó guardado */}
-    <button className="btn ghost block" style={{ marginTop: 10 }}
+    <button className="btn ghost block mt10"
       onClick={() => { guardar({ ...borrador, valores: v, seccion: sec, actualizada: Date.now() }); cancelar(); }}>
       Salir y continuar después
     </button>
@@ -679,57 +725,57 @@ function ListaBorradores({ borradores, abrir, borrar, nuevo, mapa, enviar, cola,
   return <main>
     <h2>Borradores</h2>
     <p className="lead">Órdenes sin terminar guardadas en este teléfono. Nada se pierde si cierra la app o se queda sin señal.</p>
-    <button className="btn primary block" style={{ marginBottom: 14 }} onClick={nuevo}>Nueva orden de trabajo</button>
+    <button className="btn primary block mb14" onClick={nuevo}>Nueva orden de trabajo</button>
 
     {/* Un borrador capturado con otro usuario nunca debe parecer perdido */}
     {!!deOtros && <div className="note">
       Hay {deOtros} borrador(es) capturado(s) con otro usuario en este dispositivo.
-      <button className="btn ghost block" style={{ marginTop: 8 }} onClick={alternarTodos}>
+      <button className="btn ghost block mt8" onClick={alternarTodos}>
         {verTodos ? "Ver solo los míos" : "Mostrarlos"}</button>
     </div>}
 
     {/* Las órdenes en cola solo esperan señal: el resto vuelve solo a borradores */}
     {!!cola.length && <>
-      <h2 style={{ marginTop: 4 }}>Esperando señal</h2>
+      <h2 className="mt4">Esperando señal</h2>
       <p className="lead">Se envían solas al reconectar.</p>
-      <button className="btn block" style={{ marginBottom: 10 }} disabled={enviando} onClick={reintentar}>
+      <button className="btn block mb10" disabled={enviando} onClick={reintentar}>
         {enviando ? <><span className="spin" /> Enviando…</> : "Intentar ahora"}</button>
       {cola.map(o => <div className="item" key={o.id}>
         <div className="body">
           <div className="t">{o.valores.equipo || "Equipo"}</div>
           <div className="s">{o.folio ? o.folio + " · " : ""}{o.valores.unidad || "—"}<br />
-            {o.error ? <span style={{ color: "var(--alert)" }}>{o.error}</span> : "En espera de conexión"}</div>
+            {o.error ? <span className="txt-alerta">{o.error}</span> : "En espera de conexión"}</div>
         </div>
-        <button className="btn ghost" style={{ padding: "6px 10px", fontSize: 12 }} onClick={() => devolver(o.id)}>
+        <button className="btn ghost mini" onClick={() => devolver(o.id)}>
           A borradores</button>
       </div>)}
-      <h2 style={{ marginTop: 18 }}>Sin terminar</h2>
+      <h2 className="mt18">Sin terminar</h2>
     </>}
     {!borradores.length
       ? <div className="empty">No hay borradores.<br />Empiece una orden y quedará aquí en cuanto escriba el primer dato.</div>
       : borradores.map(b => {
         const v = b.valores, pend = faltanRequeridos(v, mapa).length;
-        return <div className="item" key={b.id} style={{ flexDirection: "column", alignItems: "stretch" }}>
-          <div style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
-            <div className="body" onClick={() => abrir(b)} style={{ cursor: "pointer" }}>
+        return <div className="item col" key={b.id}>
+          <div className="fila-item">
+            <div className="body clic" onClick={() => abrir(b)}>
               <div className="t">{v.equipo || "Equipo sin capturar"}</div>
               <div className="s">{v.unidad || "Unidad sin capturar"} · {v.inventario || "s/inv"}<br />
               {b.folio ? b.folio + " · " : ""}Editado {fmtFecha(b.actualizada)}</div>
-            {b.asignacion && !b.asignacion.cancelada && <div className="s" style={{ marginTop: 5 }}>
+            {b.asignacion && !b.asignacion.cancelada && <div className="s mt5">
               <span className="tag asg">Asignada{b.asignacion.fechaProgramada ? " · " + fechaCorta(b.asignacion.fechaProgramada) : ""}</span>
               {b.asignacion.notas && <> {b.asignacion.notas}</>}</div>}
-            {b.asignacion && b.asignacion.cancelada && <div className="s" style={{ color: "var(--alert)", marginTop: 5 }}>
+            {b.asignacion && b.asignacion.cancelada && <div className="s txt-alerta mt5">
               Coordinación canceló esta asignación. Puede eliminar el borrador.</div>}
-            {b.errorEnvio && <div className="s" style={{ color: "var(--alert)", marginTop: 5 }}>
+            {b.errorEnvio && <div className="s txt-alerta mt5">
               No se envió: {b.errorEnvio}</div>}
             </div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 6, alignItems: "flex-end" }}>
+            <div className="col-fin">
               <span className={"tag " + (pend ? "pend" : "ok")}>{pend ? pend + " pend." : "lista"}</span>
-              <button className="btn danger ghost" style={{ padding: "6px 10px", fontSize: 12 }} onClick={() => borrar(b.id)}>Eliminar</button>
+              <button className="btn danger ghost mini" onClick={() => borrar(b.id)}>Eliminar</button>
             </div>
           </div>
           {/* Una orden completa se puede mandar sin volver a abrirla paso por paso */}
-          {!pend && <button className="btn primary block" style={{ marginTop: 10 }}
+          {!pend && <button className="btn primary block mt10"
             onClick={() => enviar(b)}>{b.errorEnvio ? "Reintentar el envío" : "Enviar esta orden"}</button>}
         </div>;
       })}
@@ -792,7 +838,7 @@ function MisEnvios({ ingeniero, enviados, cargar, cargando, error }) {
   const filtrando = anio || mes || hospital || texto;
 
   if (abierta) return <main>
-    <button className="btn ghost" onClick={() => setAbierta(null)} style={{ marginBottom: 12 }}>← Volver</button>
+    <button className="btn ghost mb12" onClick={() => setAbierta(null)}>← Volver</button>
     <h2>{abierta.folio || "Envío " + abierta.id}</h2>
     <p className="lead">
       {abierta.equipo || "Equipo"} · {abierta.unidad || "—"}<br />
@@ -821,13 +867,13 @@ function MisEnvios({ ingeniero, enviados, cargar, cargando, error }) {
           {meses.map(m => <option key={m} value={m}>{MESES[Number(m)]}</option>)}
         </select>
       </div>
-      <select value={hospital} onChange={e => setHospital(e.target.value)} style={{ marginTop: 10 }}>
+      <select className="mt10" value={hospital} onChange={e => setHospital(e.target.value)}>
         <option value="">Todas las unidades médicas</option>
         {hospitales.map(h => <option key={h} value={h}>{h}</option>)}
       </select>
-      <input type="text" placeholder="Buscar equipo, inventario o folio" value={texto}
-        onChange={e => setTexto(e.target.value)} style={{ marginTop: 10 }} />
-      <div className="actions" style={{ marginTop: 10 }}>
+      <input className="mt10" type="text" placeholder="Buscar equipo, inventario o folio" value={texto}
+        onChange={e => setTexto(e.target.value)} />
+      <div className="actions mt10">
         <button className="btn ghost" onClick={cargar} disabled={cargando}>
           {cargando ? <><span className="spin" /> Consultando…</> : "Actualizar"}</button>
         {filtrando && <button className="btn ghost" onClick={limpiar}>Quitar filtros</button>}
@@ -836,7 +882,7 @@ function MisEnvios({ ingeniero, enviados, cargar, cargando, error }) {
 
     {error && <div className="note bad">{error}</div>}
 
-    <p className="lead" style={{ marginBottom: 10 }}>
+    <p className="lead mb10">
       {cargando ? "Consultando el historial…"
         : lista.length === enviados.length
           ? `${enviados.length} orden${enviados.length === 1 ? "" : "es"} en total`
@@ -848,7 +894,7 @@ function MisEnvios({ ingeniero, enviados, cargar, cargando, error }) {
     {!cargando && enviados.length > 0 && !lista.length &&
       <div className="empty">Ninguna orden coincide con los filtros.</div>}
 
-    {lista.map(s => <div className="item" key={s.fila} onClick={() => abrir(s)} style={{ cursor: "pointer" }}>
+    {lista.map(s => <div className="item clic" key={s.fila} onClick={() => abrir(s)}>
       <div className="body">
         <div className="t">{s.equipo || "Equipo"}</div>
         <div className="s">{s.folio ? s.folio + " · " : ""}{s.unidad || "—"} · {s.inventario || "s/inv"}<br />
@@ -882,7 +928,7 @@ function Avisos({ ingeniero, avisos, cargar, cargando, error, esCoordinador, ing
   const alternar = async a => { await guardar({ fila: a.fila, activo: !a.activo }); };
 
   if (editando) return <main>
-    <button className="btn ghost" onClick={() => setEditando(null)} style={{ marginBottom: 12 }}>← Volver</button>
+    <button className="btn ghost mb12" onClick={() => setEditando(null)}>← Volver</button>
     <h2>{editando === "nuevo" ? "Nuevo aviso" : "Editar aviso"}</h2>
     <p className="lead">Aparece en la pestaña Avisos del ingeniero asignado.</p>
     <div className="card">
@@ -901,8 +947,7 @@ function Avisos({ ingeniero, avisos, cargar, cargando, error, esCoordinador, ing
         <input type="text" value={aviso.titulo} onChange={e => setAviso({ ...aviso, titulo: e.target.value })}
           placeholder="Mantenimientos de la semana" /></label>
       <label className="f"><span className="lb">Mensaje <em>*</em></span>
-        <textarea value={aviso.mensaje} onChange={e => setAviso({ ...aviso, mensaje: e.target.value })}
-          style={{ minHeight: 150 }} placeholder="Un equipo por renglón, con su ubicación y fecha programada" /></label>
+        <textarea className="alto150" value={aviso.mensaje} onChange={e => setAviso({ ...aviso, mensaje: e.target.value })} placeholder="Un equipo por renglón, con su ubicación y fecha programada" /></label>
       <button className="btn primary block" disabled={!aviso.titulo.trim() || !aviso.mensaje.trim() || guardando}
         onClick={publicar}>{guardando ? <span className="spin" /> : "Publicar aviso"}</button>
     </div>
@@ -914,16 +959,15 @@ function Avisos({ ingeniero, avisos, cargar, cargando, error, esCoordinador, ing
       ? "Comunicados publicados para el equipo."
       : "Comunicados y asignaciones para " + ingeniero.split(" ")[0] + "."}</p>
 
-    {esCoordinador && <button className="btn primary block" style={{ marginBottom: 10 }} onClick={abrirNuevo}>
+    {esCoordinador && <button className="btn primary block mb10" onClick={abrirNuevo}>
       Nuevo aviso</button>}
-    <button className="btn ghost block" style={{ marginBottom: 14 }} onClick={cargar} disabled={cargando}>
+    <button className="btn ghost block mb14" onClick={cargar} disabled={cargando}>
       {cargando ? <><span className="spin" /> Consultando…</> : "Actualizar"}</button>
 
     {error && <div className="note bad">{error}</div>}
     {!cargando && !avisos.length && !error && <div className="empty">No hay avisos por ahora.</div>}
 
-    {avisos.map(a => <div className={"aviso " + (a.tipo || "informativo")} key={a.id}
-      style={a.activo === false ? { opacity: .5 } : null}>
+    {avisos.map(a => <div className={"aviso " + (a.tipo || "informativo") + (a.activo === false ? " apagado" : "")} key={a.id}>
       <h3>{a.titulo || "Aviso"}</h3>
       {a.mensaje && <p>{a.mensaje}</p>}
       <div className="meta">
@@ -932,9 +976,9 @@ function Avisos({ ingeniero, avisos, cargar, cargando, error, esCoordinador, ing
           ? " · para " + (a.paraTodos ? "todo el equipo" : a.destinatario) + (a.activo === false ? " · oculto" : "")
           : (a.paraTodos ? " · para todo el equipo" : " · personal")}
       </div>
-      {esCoordinador && <div className="actions" style={{ marginTop: 10 }}>
-        <button className="btn ghost" style={{ padding: "8px 12px", fontSize: 13 }} onClick={() => abrirEdicion(a)}>Editar</button>
-        <button className="btn ghost" style={{ padding: "8px 12px", fontSize: 13 }} onClick={() => alternar(a)}>
+      {esCoordinador && <div className="actions mt10">
+        <button className="btn ghost compacto t13" onClick={() => abrirEdicion(a)}>Editar</button>
+        <button className="btn ghost compacto t13" onClick={() => alternar(a)}>
           {a.activo === false ? "Mostrar" : "Ocultar"}</button>
       </div>}
     </div>)}
@@ -985,7 +1029,7 @@ function Tablero({ tareas, cargar, cargando, error, esAdmin, esVisualizador, yo,
 
   // ---- Alta y edición ----
   if (editando) return <main>
-    <button className="btn ghost" onClick={() => setEditando(null)} style={{ marginBottom: 12 }}>← Volver</button>
+    <button className="btn ghost mb12" onClick={() => setEditando(null)}>← Volver</button>
     <h2>{t.fila ? "Editar tarea" : "Nueva tarea"}</h2>
     <div className="card">
       <label className="f"><span className="lb">Tarea <em>*</em></span>
@@ -1022,7 +1066,7 @@ function Tablero({ tareas, cargar, cargando, error, esAdmin, esVisualizador, yo,
     const col = COLUMNAS.find(c => c.k === abierta.estado);
     const puedeMover = !esVisualizador && (esAdmin || norm(abierta.asignado) === norm(yo));
     return <main>
-      <button className="btn ghost" onClick={() => setAbierta(null)} style={{ marginBottom: 12 }}>← Tablero</button>
+      <button className="btn ghost mb12" onClick={() => setAbierta(null)}>← Tablero</button>
       <h2>{rotulo(abierta)}</h2>
       <p className="lead">{(PRIORIDADES.find(p => p.k === abierta.prioridad) || {}).n} · {col ? col.n : abierta.estado}</p>
       <div className="card"><div className="kv">
@@ -1031,17 +1075,17 @@ function Tablero({ tareas, cargar, cargando, error, esAdmin, esVisualizador, yo,
         <div><b>Ubicación:</b> {abierta.ubicacion || "—"}</div>
         <div><b>Asignada a:</b> {abierta.asignado || "sin asignar"}</div>
         {esAdmin && <div><b>Asignó:</b> {abierta.asignadoPor || "—"}</div>}
-        {abierta.observaciones && <div style={{ marginTop: 8 }}><b>Observaciones:</b><br />{abierta.observaciones}</div>}
+        {abierta.observaciones && <div className="mt8"><b>Observaciones:</b><br />{abierta.observaciones}</div>}
       </div></div>
 
       {abierta.bitacora && <>
-        <h2 style={{ marginTop: 18 }}>Bitácora</h2>
-        <div className="card"><div className="kv" style={{ whiteSpace: "pre-wrap" }}>{abierta.bitacora}</div></div>
+        <h2 className="mt18">Bitácora</h2>
+        <div className="card"><div className="kv pre">{abierta.bitacora}</div></div>
       </>}
 
       {puedeMover && <>
-        <h2 style={{ marginTop: 18 }}>Mover a</h2>
-        <div className="chips" style={{ marginBottom: 14 }}>
+        <h2 className="mt18">Mover a</h2>
+        <div className="chips mb14">
           {COLUMNAS.map(c => <button key={c.k} type="button"
             className={"chip" + (c.k === "con_observacion" ? " neg" : "")}
             aria-pressed={abierta.estado === c.k}
@@ -1111,10 +1155,10 @@ function Tablero({ tareas, cargar, cargando, error, esAdmin, esVisualizador, yo,
         {esAdmin && <button aria-pressed={false} onClick={() => setVista("reporte")}>Reporte</button>}
       </div>
       <div className="mescab">
-        <button className="btn ghost" style={{ padding: "8px 12px" }}
+        <button className="btn ghost compacto"
           onClick={() => setMes(m => m.m === 0 ? { a: m.a - 1, m: 11 } : { a: m.a, m: m.m - 1 })}>‹</button>
         <b>{MESES_N[mes.m]} {mes.a}</b>
-        <button className="btn ghost" style={{ padding: "8px 12px" }}
+        <button className="btn ghost compacto"
           onClick={() => setMes(m => m.m === 11 ? { a: m.a + 1, m: 0 } : { a: m.a, m: m.m + 1 })}>›</button>
       </div>
       <div className="cal">
@@ -1133,7 +1177,7 @@ function Tablero({ tareas, cargar, cargando, error, esAdmin, esVisualizador, yo,
       </div>
 
       {dia && <>
-        <h2 style={{ marginTop: 18 }}>{dia}</h2>
+        <h2 className="mt18">{dia}</h2>
         {!delDia.length && <div className="empty">Sin tareas ese día.</div>}
         {delDia.map(x => <div className={"tarea " + x.prioridad} key={x.id} onClick={() => setAbierta(x)}>
           <div className="t">{rotulo(x)}</div>
@@ -1164,16 +1208,15 @@ function Tablero({ tareas, cargar, cargando, error, esAdmin, esVisualizador, yo,
         <button aria-pressed={true}>Por ingeniero</button>
         <button aria-pressed={false} onClick={() => setVista("calendario")}>Calendario</button>
       </div>
-      <button className="btn ghost block" style={{ marginBottom: 14 }} onClick={cargar} disabled={cargando}>
+      <button className="btn ghost block mb14" onClick={cargar} disabled={cargando}>
         {cargando ? <><span className="spin" /> Consultando…</> : "Actualizar"}</button>
 
       {error && <div className="note bad">{error}</div>}
       {!cargando && !tareas.length && !error && <div className="empty">No hay actividades en el tablero.</div>}
 
-      {nombres.map(n => <div key={n} style={{ marginBottom: 18 }}>
-        <h3 style={{ fontSize: 12, letterSpacing: ".1em", textTransform: "uppercase", color: "var(--amber)",
-          margin: "0 0 8px", display: "flex", justifyContent: "space-between" }}>
-          <span>{n}</span><span style={{ color: "var(--muted)" }}>{grupos[n].length}</span></h3>
+      {nombres.map(n => <div className="mb18" key={n}>
+        <h3 className="subtitulo grupo">
+          <span>{n}</span><span className="txt-tenue">{grupos[n].length}</span></h3>
         {grupos[n].map(x => <div className={"tarea " + x.prioridad} key={x.id} onClick={() => setAbierta(x)}>
           <div className="t">{rotulo(x)}</div>
           <div className="d">
@@ -1212,16 +1255,16 @@ function Tablero({ tareas, cargar, cargando, error, esAdmin, esVisualizador, yo,
 
       <div className="card tight">
         <div className="row">
-          <label className="f" style={{ marginBottom: 10 }}><span className="lb">Desde</span>
+          <label className="f mb10"><span className="lb">Desde</span>
             <input type="date" value={f.desde} onChange={e => setFiltros({ ...f, desde: e.target.value })} /></label>
-          <label className="f" style={{ marginBottom: 10 }}><span className="lb">Hasta</span>
+          <label className="f mb10"><span className="lb">Hasta</span>
             <input type="date" value={f.hasta} onChange={e => setFiltros({ ...f, hasta: e.target.value })} /></label>
         </div>
         <select value={f.ingeniero} onChange={e => setFiltros({ ...f, ingeniero: e.target.value })}>
           <option value="">Todos los ingenieros</option>
           {ingenieros.map(i => <option key={i} value={i}>{i}</option>)}
         </select>
-        <div className="row" style={{ marginTop: 10 }}>
+        <div className="row mt10">
           <select value={f.estado} onChange={e => setFiltros({ ...f, estado: e.target.value })}>
             <option value="">Todos los estados</option>
             {COLUMNAS.map(c => <option key={c.k} value={c.k}>{c.n}</option>)}
@@ -1236,13 +1279,13 @@ function Tablero({ tareas, cargar, cargando, error, esAdmin, esVisualizador, yo,
       <p className="lead">{lista.length} actividad(es) con estos filtros.</p>
 
       <div className="card">
-        <h3 style={{ fontSize: 11, letterSpacing: ".12em", textTransform: "uppercase", color: "var(--amber)", margin: "0 0 8px" }}>Por estado</h3>
+        <h3 className="subtitulo">Por estado</h3>
         <div className="kv">{contar("estado").map(([k, n]) =>
           <div key={k}><b>{(COLUMNAS.find(c => c.k === k) || {}).n || k}:</b> {n}</div>)}</div>
-        <h3 style={{ fontSize: 11, letterSpacing: ".12em", textTransform: "uppercase", color: "var(--amber)", margin: "16px 0 8px" }}>Por prioridad</h3>
+        <h3 className="subtitulo sep">Por prioridad</h3>
         <div className="kv">{contar("prioridad").map(([k, n]) =>
           <div key={k}><b>{(PRIORIDADES.find(p => p.k === k) || {}).n || k}:</b> {n}</div>)}</div>
-        <h3 style={{ fontSize: 11, letterSpacing: ".12em", textTransform: "uppercase", color: "var(--amber)", margin: "16px 0 8px" }}>Por ingeniero</h3>
+        <h3 className="subtitulo sep">Por ingeniero</h3>
         <div className="kv">{contar("asignado").map(([k, n]) => <div key={k}><b>{k}:</b> {n}</div>)}</div>
       </div>
 
@@ -1253,13 +1296,13 @@ function Tablero({ tareas, cargar, cargando, error, esAdmin, esVisualizador, yo,
       <button className="btn primary block" disabled={!lista.length || enviandoRep}
         onClick={() => enviarReporte({ ...f, correo: correoDestino.trim() })}>
         {enviandoRep ? <><span className="spin" /> Generando…</> : "Enviar reporte completo en PDF"}</button>
-      <p className="lead" style={{ marginTop: 8 }}>Incluye totales, el detalle de cada actividad y su bitácora de observaciones.</p>
+      <p className="lead mt8">Incluye totales, el detalle de cada actividad y su bitácora de observaciones.</p>
 
       {/* Reporte de ubicaciones: solo quién, dónde y por cuánto tiempo */}
-      <div className="card" style={{ marginTop: 6 }}>
-        <h3 style={{ fontSize: 11, letterSpacing: ".12em", textTransform: "uppercase", color: "var(--amber)", margin: "0 0 8px" }}>
+      <div className="card mt6">
+        <h3 className="subtitulo">
           Reporte de ubicaciones</h3>
-        <p className="lead" style={{ marginBottom: 12 }}>
+        <p className="lead mb12">
           Dónde está asignado cada ingeniero y por cuántos días, en el periodo de arriba. Sin prioridades ni estados.</p>
         <label className="f"><span className="lb">Enviar a <em>*</em></span>
           <input type="email" value={correoUbic} onChange={e => setCorreoUbic(e.target.value)}
@@ -1269,7 +1312,7 @@ function Tablero({ tareas, cargar, cargando, error, esAdmin, esVisualizador, yo,
           {enviandoUbic ? <><span className="spin" /> Generando…</> : "Enviar reporte de ubicaciones"}</button>
       </div>
 
-      {lista.map(x => <div className={"tarea " + x.prioridad} key={x.id} onClick={() => setAbierta(x)} style={{ marginTop: 8 }}>
+      {lista.map(x => <div className={("tarea " + x.prioridad) + " mt8"} key={x.id} onClick={() => setAbierta(x)}>
         <div className="t">{x.titulo}</div>
         <div className="d">{x.inicio || "sin fecha"}{x.fin && x.fin !== x.inicio ? " → " + x.fin : ""}<br />
           {x.asignado || "sin asignar"} · {(COLUMNAS.find(c => c.k === x.estado) || {}).n}</div>
@@ -1287,9 +1330,9 @@ function Tablero({ tareas, cargar, cargando, error, esAdmin, esVisualizador, yo,
       {esAdmin && <button aria-pressed={false} onClick={() => setVista("reporte")}>Reporte</button>}
     </div>
 
-    {esAdmin && <button className="btn primary block" style={{ marginBottom: 10 }}
+    {esAdmin && <button className="btn primary block mb10"
       onClick={() => { setT({ ...vacia }); setEditando("nuevo"); }}>Nueva tarea</button>}
-    <button className="btn ghost block" style={{ marginBottom: 14 }} onClick={cargar} disabled={cargando}>
+    <button className="btn ghost block mb14" onClick={cargar} disabled={cargando}>
       {cargando ? <><span className="spin" /> Consultando…</> : "Actualizar"}</button>
 
     {error && <div className="note bad">{error}</div>}
@@ -1300,7 +1343,7 @@ function Tablero({ tareas, cargar, cargando, error, esAdmin, esVisualizador, yo,
         const dela = tareas.filter(x => x.estado === c.k);
         return <div className="kcol" key={c.k}>
           <h3>{c.n}<b>{dela.length}</b></h3>
-          {!dela.length && <div style={{ fontSize: 12, color: "var(--muted)", padding: "6px 2px" }}>Vacía</div>}
+          {!dela.length && <div className="nota-mini">Vacía</div>}
           {dela.map(x => <div className={"tarea " + x.prioridad} key={x.id} onClick={() => setAbierta(x)}>
             <div className="t">{x.titulo}</div>
             <div className="d">
@@ -1331,7 +1374,7 @@ function Usuarios({ usuarios, cargar, cargando, error, guardar, ingenieros, yo }
   };
 
   if (editando) return <main>
-    <button className="btn ghost" onClick={() => setEditando(null)} style={{ marginBottom: 12 }}>← Volver</button>
+    <button className="btn ghost mb12" onClick={() => setEditando(null)}>← Volver</button>
     <h2>{editando === "nuevo" ? "Nuevo usuario" : "Editar usuario"}</h2>
     <p className="lead">{editando === "nuevo"
       ? "El nombre debe coincidir con la lista de ingenieros del formulario para que sus órdenes se registren a su nombre."
@@ -1366,7 +1409,7 @@ function Usuarios({ usuarios, cargar, cargando, error, guardar, ingenieros, yo }
       <label className="f"><span className="lb">Correo (opcional)</span>
         <input type="email" value={u.correo} onChange={e => setU({ ...u, correo: e.target.value })} /></label>
 
-      <div className="chips" style={{ marginBottom: 14 }}>
+      <div className="chips mb14">
         <button type="button" className="chip" aria-pressed={u.activo} onClick={() => setU({ ...u, activo: true })}>Activo</button>
         <button type="button" className="chip neg" aria-pressed={!u.activo} onClick={() => setU({ ...u, activo: false })}>Dado de baja</button>
       </div>
@@ -1382,15 +1425,15 @@ function Usuarios({ usuarios, cargar, cargando, error, guardar, ingenieros, yo }
   return <main>
     <h2>Usuarios</h2>
     <p className="lead">Quién puede entrar a la app y con qué permisos.</p>
-    <button className="btn primary block" style={{ marginBottom: 10 }} onClick={nuevo}>Nuevo usuario</button>
-    <button className="btn ghost block" style={{ marginBottom: 14 }} onClick={cargar} disabled={cargando}>
+    <button className="btn primary block mb10" onClick={nuevo}>Nuevo usuario</button>
+    <button className="btn ghost block mb14" onClick={cargar} disabled={cargando}>
       {cargando ? <><span className="spin" /> Consultando…</> : "Actualizar"}</button>
 
     {error && <div className="note bad">{error}</div>}
     {!cargando && !usuarios.length && !error && <div className="empty">No hay usuarios registrados.</div>}
 
-    {usuarios.map(x => <div className="item" key={x.fila} style={x.activo ? null : { opacity: .55 }}>
-      <div className="body" onClick={() => editar(x)} style={{ cursor: "pointer" }}>
+    {usuarios.map(x => <div className={"item" + (x.activo ? "" : " apagado")} key={x.fila}>
+      <div className="body clic" onClick={() => editar(x)}>
         <div className="t">{x.nombre}{norm(x.nombre) === norm(yo) ? " (usted)" : ""}</div>
         <div className="s">{x.rol === "administrador" ? "Administrador"
           : x.rol === "visualizador" ? "Visualizador" : "Operador"}
@@ -1425,7 +1468,7 @@ function Chat({ ingeniero, sesion, esCoordinador, hilos, cargarHilos, cargando, 
   };
 
   if (nuevo) return <main>
-    <button className="btn ghost" onClick={() => setNuevo(false)} style={{ marginBottom: 12 }}>← Volver</button>
+    <button className="btn ghost mb12" onClick={() => setNuevo(false)}>← Volver</button>
     <h2>Nueva conversación</h2>
     <p className="lead">Se identifica por el número de inventario del equipo o por el folio de la orden.</p>
     <div className="card">
@@ -1451,13 +1494,13 @@ function Chat({ ingeniero, sesion, esCoordinador, hilos, cargarHilos, cargando, 
   </main>;
 
   if (hiloAbierto) return <main>
-    <button className="btn ghost" onClick={cerrarHilo} style={{ marginBottom: 12 }}>← Conversaciones</button>
+    <button className="btn ghost mb12" onClick={cerrarHilo}>← Conversaciones</button>
     <h2>{hiloAbierto.titulo || hiloAbierto.clave}</h2>
     <p className="lead">{hiloAbierto.clave}
       {hiloAbierto.ingeniero ? " · dirigida a " + hiloAbierto.ingeniero : " · sin ingeniero asignado"}</p>
 
-    {esCoordinador && <div className="card tight" style={{ marginBottom: 14 }}>
-      <label className="f" style={{ marginBottom: 0 }}><span className="lb">Ingeniero asignado</span>
+    {esCoordinador && <div className="card tight mb14">
+      <label className="f mb0"><span className="lb">Ingeniero asignado</span>
         <select value={hiloAbierto.ingeniero || ""} onChange={e => reasignar(hiloAbierto, e.target.value)}>
           <option value="">Sin asignar</option>
           {ingenieros.map(i => <option key={i} value={i}>{i}</option>)}
@@ -1479,20 +1522,20 @@ function Chat({ ingeniero, sesion, esCoordinador, hilos, cargarHilos, cargando, 
 
     <div className="redactar">
       <textarea value={texto} onChange={e => setTexto(e.target.value)} placeholder="Escriba su mensaje" />
-      <button className="btn primary" style={{ padding: "12px 18px" }} disabled={!texto.trim() || enviando} onClick={mandar}>
+      <button className="btn primary holgado" disabled={!texto.trim() || enviando} onClick={mandar}>
         {enviando ? <span className="spin" /> : "Enviar"}</button>
     </div>
 
     {esCoordinador && (confirmando
-      ? <div className="note bad" style={{ marginTop: 14 }}>
+      ? <div className="note bad mt14">
           Se van a borrar los {mensajes.length} mensajes de esta conversación para todos. No se puede deshacer.
-          <div className="actions" style={{ marginTop: 10 }}>
+          <div className="actions mt10">
             <button className="btn ghost" onClick={() => setConfirmando(false)}>Cancelar</button>
             <button className="btn danger" onClick={() => { setConfirmando(false); finalizar(hiloAbierto); }}>
               Sí, finalizar</button>
           </div>
         </div>
-      : <button className="btn danger ghost block" style={{ marginTop: 14 }} onClick={() => setConfirmando(true)}>
+      : <button className="btn danger ghost block mt14" onClick={() => setConfirmando(true)}>
           Finalizar conversación</button>)}
   </main>;
 
@@ -1502,8 +1545,8 @@ function Chat({ ingeniero, sesion, esCoordinador, hilos, cargarHilos, cargando, 
       ? "Todas las conversaciones del equipo."
       : "Conversaciones sobre sus órdenes y equipos."}</p>
 
-    <button className="btn primary block" style={{ marginBottom: 10 }} onClick={() => setNuevo(true)}>Nueva conversación</button>
-    <button className="btn ghost block" style={{ marginBottom: 14 }} onClick={cargarHilos} disabled={cargando}>
+    <button className="btn primary block mb10" onClick={() => setNuevo(true)}>Nueva conversación</button>
+    <button className="btn ghost block mb14" onClick={cargarHilos} disabled={cargando}>
       {cargando ? <><span className="spin" /> Consultando…</> : "Actualizar"}</button>
 
     {!!pendientes && <div className="note">{pendientes} mensaje(s) esperando señal. Se envían solos al reconectar.</div>}
@@ -1514,13 +1557,13 @@ function Chat({ ingeniero, sesion, esCoordinador, hilos, cargarHilos, cargando, 
       <div className="body">
         <div className="t">{h.titulo || h.clave}</div>
         <div className="u">{h.ultimoAutor ? h.ultimoAutor.split(" ")[0] + ": " : ""}{h.ultimo || ""}</div>
-        <div className="u" style={{ marginTop: 3, fontFamily: "var(--mono)", fontSize: 11 }}>
+        <div className="u mono11 mt3">
           {h.clave}{esCoordinador
             ? (h.ingeniero ? " · " + h.ingeniero.split(" ").slice(0, 2).join(" ")
-              : <span style={{ color: "var(--alert)" }}> · sin asignar</span>)
+              : <span className="txt-alerta"> · sin asignar</span>)
             : ""}</div>
       </div>
-      <div style={{ display: "flex", flexDirection: "column", gap: 6, alignItems: "flex-end" }}>
+      <div className="col-fin">
         <span className="h">{h.ultimaFecha ? new Date(h.ultimaFecha).toLocaleDateString("es-MX", { day: "2-digit", month: "short" }) : ""}</span>
         {noLeidos[h.clave] > 0 && <span className="tag pend">{noLeidos[h.clave]} nuevo(s)</span>}
       </div>
@@ -1582,15 +1625,15 @@ function Ajustes({ ingeniero, salir, esquema, faltantes, mapa, recargar, estadoP
         <div><b>Almacenamiento:</b> {Store.modo}</div>
         <div><b>Preguntas leídas:</b> {esquema ? Object.keys(esquema).length : 0}</div>
       </div>
-      <div className="actions" style={{ marginTop: 12 }}>
+      <div className="actions mt12">
         <button className="btn" onClick={recargar}>Releer formulario</button>
         <button className="btn ghost" onClick={salir}>Cerrar sesión</button>
       </div>
-      {rol === "administrador" && <button className="btn primary block" style={{ marginTop: 10 }}
+      {rol === "administrador" && <button className="btn primary block mt10"
         onClick={verUsuarios}>Gestionar usuarios</button>}
 
       {nips
-        ? <div style={{ marginTop: 14, borderTop: "1px solid var(--line)", paddingTop: 14 }}>
+        ? <div className="separado">
             <label className="f"><span className="lb">NIP actual</span>
               <input type="password" inputMode="numeric" maxLength={4} className="nip" value={nips.actual}
                 onChange={e => setNips({ ...nips, actual: e.target.value.replace(/\D/g, ""), err: "" })} /></label>
@@ -1610,29 +1653,27 @@ function Ajustes({ ingeniero, salir, esquema, faltantes, mapa, recargar, estadoP
                 onClick={aplicarNip}>{cambiando ? <span className="spin" /> : "Cambiar NIP"}</button>
             </div>
           </div>
-        : <button className="btn ghost block" style={{ marginTop: 10 }}
+        : <button className="btn ghost block mt10"
             onClick={() => setNips({ actual: "", nuevo: "", repetir: "", err: "" })}>Cambiar mi NIP</button>}
-      <button className="btn ghost block" style={{ marginTop: 10 }} onClick={probar}>Probar conexión</button>
-      {prueba && prueba.ok !== null && <div className={"note" + (prueba.ok ? "" : " bad")} style={{ marginTop: 10 }}>
+      <button className="btn ghost block mt10" onClick={probar}>Probar conexión</button>
+      {prueba && prueba.ok !== null && <div className={("note" + (prueba.ok ? "" : " bad")) + " mt10"}>
         {prueba.ok
           ? (prueba.soloUno
             ? "Conexión correcta. Uno de los dos caminos no está disponible, pero la app funciona con el otro."
             : "Conexión correcta por los dos caminos.")
           : "Sin conexión con el proxy. Revise la URL y el token."}
       </div>}
-      {prueba && <pre style={{ marginTop: 10, whiteSpace: "pre-wrap", wordBreak: "break-all",
-        fontFamily: "var(--mono)", fontSize: 11, lineHeight: 1.6, color: "var(--muted)",
-        background: "#04121F", border: "1px solid var(--line)", borderRadius: 8, padding: 10 }}>{prueba.texto}</pre>}
+      {prueba && <pre className="diagnostico">{prueba.texto}</pre>}
     </div>
 
-    <h2 style={{ marginTop: 20 }}>Correspondencia de campos</h2>
+    <h2 className="mt20">Correspondencia de campos</h2>
     {faltantes.length
       ? <div className="note bad">{faltantes.length} campo(s) sin localizar en el formulario: {faltantes.map(f => f.et).join(", ")}. Esos datos no se envían.</div>
       : <div className="note">Los {Object.keys(mapa).length} campos de la app quedaron enlazados al formulario.</div>}
     <div className="card"><div className="kv">
       {TODOS.map(c => {
         const m = mapa[c.k];
-        return <div key={c.k}><b>{c.et}</b> → {m ? `qid ${m.qid} · ${m.type.replace("control_", "")}` : <span style={{ color: "var(--alert)" }}>sin enlazar</span>}</div>;
+        return <div key={c.k}><b>{c.et}</b> → {m ? `qid ${m.qid} · ${m.type.replace("control_", "")}` : <span className="txt-alerta">sin enlazar</span>}</div>;
       })}
     </div></div>
   </main>;
@@ -1919,7 +1960,8 @@ function App() {
       o.folio = "IAB-" + Math.floor(10000 + Math.random() * 90000);
       await Store.put("outbox", o);
     }
-    const fotos = (o.valores.fotos || []).map(f => ({ nombre: f.nombre, dataUrl: f.dataUrl }));
+    const fotos = await Promise.all((o.valores.fotos || []).map(async f =>
+      ({ nombre: f.nombre, dataUrl: f.blob ? await aDataUrl(f.blob) : f.dataUrl })));
     const campoFotos = mapa.fotos ? mapa.fotos.qid : null;
     const r = await Api.post({ action: "submit", answers: payload, fotos, campoFotos, cliente: o.id, folio: o.folio,
       asignacionId: o.asignacion ? o.asignacion.id : "", sesion });
@@ -2246,13 +2288,11 @@ function App() {
   return <>
     <header className="readout">
       <div className="readout-top">
-        <img src="icon-192.png" alt="" width="26" height="26"
-          style={{ borderRadius: 5, background: "#fff", flexShrink: 0 }} />
+        <img className="mini-firma" src="icon-192.png" alt="" width="26" height="26" />
         <div className="brand">Orden de <span>Trabajo</span></div>
         <div className="who">{ingeniero.split(" ").slice(0, 2).join(" ")}<br />{esCoordinador ? "Coordinación" : "IA Biomédica"}</div>
         <button onClick={() => setTab("ajustes")} aria-label="Ajustes"
-          style={{ background: "none", border: 0, color: tabActual === "ajustes" ? "var(--amber)" : "var(--muted)",
-            fontSize: 19, cursor: "pointer", padding: "2px 0 2px 10px", lineHeight: 1 }}>⚙</button>
+          className={"engrane" + (tabActual === "ajustes" ? " activo" : "")}>⚙</button>
       </div>
       <div className="strip">
         <div className="cell"><b className={online ? "on" : "off"}>{online ? "EN LÍNEA" : "SIN SEÑAL"}</b><i>conexión</i></div>

@@ -1,4 +1,4 @@
-/* Service worker · ot-ia-v43
+/* Service worker · ot-ia-v45
 
    Abrir la app: primero la copia guardada, al instante, y la red se consulta en
    segundo plano para la siguiente vez. Antes era al revés —red primero— y con
@@ -10,8 +10,11 @@
 
    v43: la página ya no se recarga sola cuando este service worker se instala por
    primera vez (eso cortaba la carga inicial con datos móviles), y el registro se
-   hace unos segundos después de abrir para no competir por la conexión. */
-const CACHE = 'ot-ia-v43';
+   hace unos segundos después de abrir para no competir por la conexión.
+
+   v44 (Rev.43): Preact en lugar de React, app minificada, fotos como Blob.
+   v45 (Rev.44): firmas del responsable de área y del jefe de biomédica obligatorias. */
+const CACHE = 'ot-ia-v45';
 const BASE = self.registration.scope;
 const PROPIOS = ['index.html', 'manifest.json', 'icon-192.png', 'icon-512.png'];
 
