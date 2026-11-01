@@ -326,6 +326,8 @@ const FORMULARIOS = {
              etiqueta: "Renta", secciones: SECCIONES_RENTA, todos: TODOS_RENTA }
 };
 const hayRenta = () => !!CONFIG.FORM_RENTA_ID;
+const PROXY_SIN_RENTA = "El Apps Script publicado todavía no reconoce el formulario de renta (contestó con el de trabajo). " +
+  "Publique el Codigo.gs nuevo como nueva versión. Mientras tanto, las órdenes de renta se guardan pero no se envían.";
 const tipoDe = b => (b && b.tipo === "renta") ? "renta" : "trabajo";
 
 /* ==========================================================
@@ -816,7 +818,7 @@ function Identificacion({ onEntrar, usuarios, recargar, cargando, errorCarga }) 
   </main>;
 }
 
-function Formulario({ borrador, guardar, enviar, cancelar, mapa, faltantes, def }) {
+function Formulario({ borrador, guardar, enviar, cancelar, mapa, faltantes, def, esquema, error }) {
   const SECS = (def || FORMULARIOS.trabajo).secciones, CAMPOS = (def || FORMULARIOS.trabajo).todos;
   // Si el nombre del usuario no está entre las opciones del formulario, la orden
   // será rechazada por Jotform: más vale avisarlo desde el primer paso.
@@ -870,7 +872,10 @@ function Formulario({ borrador, guardar, enviar, cancelar, mapa, faltantes, def 
       no se puede enviar a su nombre. Elija uno en el paso de firmas o pida a coordinación que
       corrija su nombre en Gestionar usuarios.
     </div>}
-    {!!sinMapear.length && <div className="note">Estos campos no se encontraron en el formulario de Jotform y no se enviarán: {sinMapear.map(c => c.et).join(", ")}. Revise la pestaña Ajustes.</div>}
+    {!esquema && error && <div className="note bad">{error}</div>}
+    {!esquema && !error && <div className="note">Todavía no se ha leído este formulario de Jotform. Puede capturar la orden;
+      se enviará cuando la app lo lea con señal.</div>}
+    {!!esquema && !!sinMapear.length && <div className="note">Estos campos no se encontraron en el formulario de Jotform y no se enviarán: {sinMapear.map(c => c.et).join(", ")}. Revise la pestaña Ajustes.</div>}
 
     <div className="card rejilla">
       {S.campos.map(c => <div key={c.k} className={"celda" + (c.mitad ? " mitad" : "")}>
@@ -930,7 +935,11 @@ function ListaBorradores({ borradores, abrir, borrar, nuevo, datosForm, enviar, 
         <div className="body">
           <div className="t">{etiqueta(o)}{o.valores.equipo || "Equipo"}</div>
           <div className="s">{o.folio ? o.folio + " · " : ""}{o.valores.unidad || "—"}<br />
-            {o.error ? <span className="txt-alerta">{o.error}</span> : "En espera de conexión"}</div>
+            {!datosForm(tipoDe(o)).esquema
+              ? <span className="txt-alerta">{datosForm(tipoDe(o)).error
+                  ? "Detenida: el Apps Script no está actualizado para órdenes de renta."
+                  : "Espera a que se lea el formulario de Jotform."}</span>
+              : o.error ? <span className="txt-alerta">{o.error}</span> : "En espera de conexión"}</div>
         </div>
         <button className="btn ghost mini" onClick={() => devolver(o.id)}>
           A borradores</button>
@@ -1860,7 +1869,7 @@ function Ajustes({ ingeniero, salir, esquema, faltantes, mapa, recargar, estadoP
     {formularios.map(F => <div key={F.def.id}>
       <h2 className="mt20">Correspondencia de campos{formularios.length > 1 ? " · " + F.def.nombre : ""}</h2>
       {!F.esquema
-        ? <div className="note bad">Todavía no se ha leído este formulario. Toque "Releer formulario" con señal.</div>
+        ? <div className="note bad">{F.error || "Todavía no se ha leído este formulario. Toque \"Releer formulario\" con señal."}</div>
         : F.faltantes.length
           ? <div className="note bad">{F.faltantes.length} campo(s) sin localizar en el formulario: {F.faltantes.map(f => f.et).join(", ")}. Esos datos no se envían.</div>
           : <div className="note">Los {Object.keys(F.mapa).length} campos de la app quedaron enlazados al formulario.</div>}
@@ -1887,6 +1896,7 @@ function App() {
   const [enviados, setEnviados] = useState([]);
   const [esquema, setEsquema] = useState(null);
   const [esquemaRenta, setEsquemaRenta] = useState(null);
+  const [errRenta, setErrRenta] = useState("");
   const [estadoProxy, setEstadoProxy] = useState("sin verificar");
   const [online, setOnline] = useState(navigator.onLine);
   const [enviando, setEnviando] = useState(false);
@@ -1922,8 +1932,8 @@ function App() {
   const [leidos, setLeidos] = useState({});
 
   const { mapa, faltantes } = useMemo(() => esquema ? resolverMapa(esquema) : { mapa: {}, faltantes: TODOS }, [esquema]);
-  const renta = useMemo(() => ({ def: FORMULARIOS.renta, esquema: esquemaRenta,
-    ...(esquemaRenta ? resolverMapa(esquemaRenta, TODOS_RENTA) : { mapa: {}, faltantes: TODOS_RENTA }) }), [esquemaRenta]);
+  const renta = useMemo(() => ({ def: FORMULARIOS.renta, esquema: esquemaRenta, error: errRenta,
+    ...(esquemaRenta ? resolverMapa(esquemaRenta, TODOS_RENTA) : { mapa: {}, faltantes: TODOS_RENTA }) }), [esquemaRenta, errRenta]);
   // Todo lo que depende del formulario sale de aquí según el tipo de la orden
   const datosForm = useCallback(t => t === "renta" ? renta
     : { def: FORMULARIOS.trabajo, esquema, mapa, faltantes }, [renta, esquema, mapa, faltantes]);
@@ -1937,15 +1947,28 @@ function App() {
   }, []);
 
   // El formulario de renta se lee aparte: si falla, la orden de trabajo sigue igual.
+  /* Candado (Rev.46): el formulario de renta solo se acepta si el proxy confirma
+     que es el de renta. Un Apps Script anterior a Rev.45 ignora "form" y contesta
+     con el de trabajo: la app enlazaba mal los campos y la orden de renta se habría
+     registrado en el formulario de trabajo. Sin confirmación no hay formulario de
+     renta, y sin formulario las rentas esperan en la cola sin enviarse. */
   const leerEsquemaRenta = useCallback(async (silencio) => {
     if (!hayRenta()) return;
     try {
       const d = await Api.get(silencio ? { action: "schema", form: "renta" } : { action: "schema", form: "renta", fresco: "1" });
-      setEsquemaRenta(d.questions);
-      await Store.put("meta", { id: "schema:renta", questions: d.questions, ts: Date.now() });
+      if (String(d.formId || "") !== String(CONFIG.FORM_RENTA_ID)) {
+        const e = new Error(PROXY_SIN_RENTA); e.proxyViejo = true; throw e;
+      }
+      setEsquemaRenta(d.questions); setErrRenta("");
+      await Store.put("meta", { id: "schema:renta", formId: d.formId, questions: d.questions, ts: Date.now() });
     } catch (e) {
-      const c = await Store.one("meta", "schema:renta");
-      if (c) setEsquemaRenta(c.questions);
+      if (e.proxyViejo) {
+        setEsquemaRenta(null); setErrRenta(e.message);
+        await Store.del("meta", "schema:renta");
+      } else {
+        const c = await Store.one("meta", "schema:renta");
+        if (c && c.formId === CONFIG.FORM_RENTA_ID) setEsquemaRenta(c.questions);
+      }
       if (!silencio) avisar("Formulario de renta: " + e.message, true);
     }
   }, []);
@@ -1977,7 +2000,9 @@ function App() {
       const c = await Store.one("meta", "schema");
       if (c) setEsquema(c.questions);
       const cr = await Store.one("meta", "schema:renta");
-      if (cr) setEsquemaRenta(cr.questions);
+      // Uno guardado sin confirmar (de un proxy anterior) se descarta
+      if (cr && cr.formId === CONFIG.FORM_RENTA_ID) setEsquemaRenta(cr.questions);
+      else if (cr) await Store.del("meta", "schema:renta");
       const vistos = await Store.one("meta", "avisosVistos");
       if (vistos) setAvisosVistos(vistos.ts || 0);
       const ses = await Store.one("meta", "sesion");
@@ -2192,11 +2217,14 @@ function App() {
     const pend = await Store.all("outbox");
     if (!pend.length) { if (manual) avisar("No hay nada por enviar"); return; }
     const listas = pend.filter(o => datosForm(tipoDe(o)).esquema);
-    if (!listas.length) { if (manual) avisar("Primero hay que leer el formulario (Ajustes)", true); return; }
+    const esperan = pend.length - listas.length;
+    const avisoEspera = () => avisar(esperan + " orden(es) de " + (pend.some(o => tipoDe(o) === "renta" && !datosForm("renta").esquema)
+      ? "renta esperan: " + (errRenta ? "el Apps Script no está actualizado." : "falta leer el formulario.")
+      : "trabajo esperan: falta leer el formulario."), true);
+    if (!listas.length) { if (manual) avisoEspera(); return; }
     setEnviando(true);
     let ok = 0, fail = 0, devueltas = 0; const avisos = [];
     // Una orden cuyo formulario aún no se ha leído espera en la cola sin tocarse
-    fail += pend.length - listas.length;
     for (const o of listas.sort((a, b) => a.creada - b.creada)) {
       try {
         const r = await enviarUno(o);
@@ -2229,10 +2257,12 @@ function App() {
     else if (devueltas) avisar(devueltas === 1
       ? "La orden regresó a borradores. Revísela y vuelva a enviarla."
       : devueltas + " órdenes regresaron a borradores.", true);
+    else if (ok && !fail && esperan) avisar(ok + " enviada(s). " + esperan + " de renta espera(n) a que se actualice el Apps Script.", true);
     else if (ok && !fail) avisar(ok === 1 ? "Orden enviada a Jotform" : ok + " órdenes enviadas");
     else if (ok && fail) avisar(`${ok} enviada(s), ${fail} espera(n) señal`, true);
     else if (fail) avisar("Sin señal. La orden espera y se enviará al reconectar.", true);
-  }, [enviando, datosForm, refrescar, sesion]);
+    else if (esperan) avisoEspera();
+  }, [enviando, datosForm, refrescar, sesion, errRenta]);
 
   useEffect(() => { if (online && listo && (esquema || esquemaRenta)) procesarCola(false); }, [online, listo, esquema, esquemaRenta]);
 
@@ -2248,7 +2278,7 @@ function App() {
     await Store.put("outbox", { ...b, creada: Date.now(), intentos: 0, error: "", errorEnvio: "" });
     await Store.del("drafts", b.id);
     setEditando(null); setTab("cola"); await refrescar();
-    procesarCola(false);
+    procesarCola(true);
   };
 
   // El rol viene del servidor; la app solo lo refleja. Un administrador ve todo,
