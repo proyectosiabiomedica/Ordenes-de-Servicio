@@ -162,15 +162,30 @@ const Api = {
       if (paralelo) reloj = setTimeout(lanzar, 12000);
     });
   },
+  /* e.red = la petición no obtuvo respuesta (se cortó la señal, "Failed to fetch",
+     "Load failed"…). El servidor pudo haberla recibido y procesado completa.
+     e.sinConfirmar = el servidor contestó que Jotform la recibió pero no la ve aún.
+     En ambos casos NO se sabe si la orden entró, y no debe tratarse como rechazo. */
   async post(body) {
-    const r = await fetch(CONFIG.PROXY_URL, {
-      method: "POST", redirect: "follow",
-      headers: { "Content-Type": "text/plain;charset=utf-8" },
-      body: JSON.stringify({ ...body, token: CONFIG.TOKEN })
-    });
-    if (!r.ok) throw new Error("HTTP " + r.status);
-    const d = await r.json();
-    if (d.ok === false) throw new Error(d.error || "El servidor rechazó el envío");
+    let r;
+    try {
+      r = await fetch(CONFIG.PROXY_URL, {
+        method: "POST", redirect: "follow",
+        headers: { "Content-Type": "text/plain;charset=utf-8" },
+        body: JSON.stringify({ ...body, token: CONFIG.TOKEN })
+      });
+    } catch (err) {
+      const e = new Error("Se perdió la conexión durante el envío (" + (err && err.message || "sin respuesta") + ")");
+      e.red = true; throw e;
+    }
+    if (!r.ok) { const e = new Error("HTTP " + r.status); e.red = r.status >= 500 || r.status === 0; throw e; }
+    let d;
+    try { d = await r.json(); }
+    catch (err) { const e = new Error("Respuesta incompleta del servidor"); e.red = true; throw e; }
+    if (d.ok === false) {
+      const e = new Error(d.error || "El servidor rechazó el envío");
+      e.sinConfirmar = !!d.sinConfirmar; e.noEncontrada = !!d.noEncontrada; throw e;
+    }
     return d;
   }
 };
@@ -259,18 +274,20 @@ const TODOS = SECCIONES.flatMap(s => s.campos);
    req:true = obligatorio en la app aunque Jotform no lo exija. */
 const SECCIONES_RENTA = [
 { id:"r-solicitud", titulo:"Solicitud y periodo", campos:[
-  { k:"solicitud",    et:"Solicitud",        tipo:"texto", req:true, m:{ label:"SOLICITUD" } },
+  { k:"solicitud",    et:"Solicitud",        tipo:"texto", m:{ label:"SOLICITUD" } },
   { k:"factura",      et:"Factura",          tipo:"texto", m:{ label:"FACTURA" } },
-  { k:"inicioFecha",  et:"Fecha de inicio",  tipo:"fecha", req:true, mitad:true, m:{ label:"INICIO:" } },
-  { k:"inicioHora",   et:"Hora de inicio",   tipo:"hora",  req:true, mitad:true, m:{ label:"HORA DE INICIO:" } },
-  { k:"terminoFecha", et:"Fecha de término", tipo:"fecha", mitad:true, m:{ label:"TERMINO:" } },
-  { k:"terminoHora",  et:"Hora de término",  tipo:"hora",  mitad:true, m:{ label:"HORA DE TERMINO:" } },
+  { k:"inicioFecha",  et:"Fecha de inicio",  tipo:"fecha", req:true, mitad:true, copiaA:"entregaFecha", m:{ label:"INICIO:" } },
+  { k:"inicioHora",   et:"Hora de inicio",   tipo:"hora",  req:true, mitad:true, copiaA:"entregaHora", m:{ label:"HORA DE INICIO:" } },
+  { k:"terminoFecha", et:"Fecha de término", tipo:"fecha", mitad:true, copiaA:"cancelFecha", m:{ label:"TERMINO:" } },
+  { k:"terminoHora",  et:"Hora de término",  tipo:"hora",  mitad:true, copiaA:"cancelHora", m:{ label:"HORA DE TERMINO:" } },
 ]},
 { id:"r-unidad", titulo:"Unidad médica", campos:[
   { k:"unidad",    et:"Unidad",    tipo:"texto", req:true, m:{ label:"UNIDAD:" } },
-  { k:"domicilio", et:"Domicilio", tipo:"direccion", m:{ label:"DOMICILIO:" } },
-  { k:"entidad",   et:"Entidad",   tipo:"select", opciones:ESTADOS, m:{ label:"ENTIDAD:" } },
-  { k:"telefono",  et:"Teléfono",  tipo:"tel", m:{ label:"TELÉFONO:" } },
+  { k:"domicilio", et:"Domicilio", tipo:"direccion", req:true, m:{ label:"DOMICILIO:" } },
+  { k:"entidad",   et:"Entidad",   tipo:"select", req:true, opciones:ESTADOS, m:{ label:"ENTIDAD:" } },
+  { k:"telefono",  et:"Teléfono",  tipo:"tel", req:true, m:{ label:"TELÉFONO:" } },
+  // Se enlaza por tipo de campo (el único campo de correo del formulario), no por su texto
+  { k:"correo",    et:"Correo electrónico del cliente", tipo:"email", req:true, m:{ tipoQ:"control_email" } },
 ]},
 { id:"r-equipo", titulo:"Equipo rentado", campos:[
   { k:"equipo",      et:"Equipo",             tipo:"texto", req:true, m:{ label:"EQUIPO:" } },
@@ -355,6 +372,7 @@ function nuevaOrden(ingeniero, tipo) {
   });
   if (renta) {
     v.inicioFecha = hoyISO(); v.inicioHora = horaISO();
+    v.entregaFecha = v.inicioFecha; v.entregaHora = v.inicioHora;   // la entrega es al inicio de la renta
     v.ingenieroNombre = ingeniero || "";
     return { id: uid(), tipo: "renta", folio: "IAR-" + Math.floor(10000 + Math.random() * 90000),
       creada: Date.now(), actualizada: Date.now(), seccion: 0, valores: v };
@@ -493,11 +511,16 @@ function construirPayload(valores, mapa, todos) {
 
 // Un campo es obligatorio si lo marcamos aquí o si Jotform lo exige. Tener una
 // lista propia hacía que la app dejara pasar órdenes que el formulario rechazaba.
+const correoValido = t => /^[^\s@,;]+@[^\s@,;]+\.[A-Za-z]{2,}$/.test(String(t || "").trim());
+
 function faltanRequeridos(valores, mapa, todos) {
   return (todos || TODOS).filter(c => {
+    const v = valores[c.k];
+    // Un correo mal escrito se marca aunque el campo no sea obligatorio: Jotform rechaza
+    // la orden completa y, sin esta revisión, el envío fallaba una y otra vez.
+    if (c.tipo === "email" && v && !correoValido(v)) return true;
     const exigido = c.req || (mapa && mapa[c.k] && mapa[c.k].obligatorio);
     if (!exigido) return false;
-    const v = valores[c.k];
     if (c.tipo === "fotos") return !v || !v.length;
     if (c.tipo === "direccion") return !v || !String(v.calle || "").trim();
     if (c.tipo === "matriz") return !v || !v.some(f => f.some(x => String(x || "").trim()));
@@ -828,7 +851,14 @@ function Formulario({ borrador, guardar, enviar, cancelar, mapa, faltantes, def,
   const [errs, setErrs] = useState([]);
   const timer = useRef(null);
 
-  const set = (k, val) => setV(prev => ({ ...prev, [k]: val }));
+  // copiaA: al cambiar inicio/término se actualizan entrega/cancelación, salvo que el
+  // ingeniero ya las haya puesto distintas a mano.
+  const set = (k, val) => setV(prev => {
+    const n = { ...prev, [k]: val };
+    const c = CAMPOS.find(x => x.k === k);
+    if (c && c.copiaA && (!prev[c.copiaA] || prev[c.copiaA] === prev[k])) n[c.copiaA] = val;
+    return n;
+  });
 
   useEffect(() => { // autoguardado
     clearTimeout(timer.current);
@@ -860,7 +890,8 @@ function Formulario({ borrador, guardar, enviar, cancelar, mapa, faltantes, def,
     <h2>{S.titulo}</h2>
     <p className="lead">Paso {sec + 1} de {SECS.length} · se guarda solo mientras escribe</p>
 
-    {!!errs.length && <div className="note bad">Faltan campos obligatorios: {errs.map(e => e.et).join(", ")}.</div>}
+    {!!errs.length && <div className="note bad">Faltan o están incompletos: {errs.map(e => e.et +
+      (e.tipo === "email" && v[e.k] && !correoValido(v[e.k]) ? " (correo no válido)" : "")).join(", ")}.</div>}
     {borrador.asignacion && sec === 0 && <div className="note">
       <b>Asignada por coordinación</b>{borrador.asignacion.asignadaPor ? " (" + borrador.asignacion.asignadaPor + ")" : ""}
       {borrador.asignacion.fechaProgramada ? " para el " + fechaCorta(borrador.asignacion.fechaProgramada) : ""}.
@@ -935,7 +966,9 @@ function ListaBorradores({ borradores, abrir, borrar, nuevo, datosForm, enviar, 
         <div className="body">
           <div className="t">{etiqueta(o)}{o.valores.equipo || "Equipo"}</div>
           <div className="s">{o.folio ? o.folio + " · " : ""}{o.valores.unidad || "—"}<br />
-            {!datosForm(tipoDe(o)).esquema
+            {o.porConfirmar
+              ? <span className="txt-ok">Enviada · esperando que Jotform la confirme</span>
+              : !datosForm(tipoDe(o)).esquema
               ? <span className="txt-alerta">{datosForm(tipoDe(o)).error
                   ? "Detenida: el Apps Script no está actualizado para órdenes de renta."
                   : "Espera a que se lea el formulario de Jotform."}</span>
@@ -2195,7 +2228,7 @@ function App() {
     else setBorradores(prev => { const o = prev.filter(x => x.id !== b.id); return [b, ...o]; });
   };
 
-  const enviarUno = async o => {
+  const enviarUno = async (o, soloConfirmar) => {
     const t = tipoDe(o), F = datosForm(t);
     const payload = construirPayload(o.valores, F.mapa, F.def.todos);
     // Los borradores creados antes de esta versión no traen folio: se les asigna
@@ -2204,11 +2237,12 @@ function App() {
       o.folio = "IAB-" + Math.floor(10000 + Math.random() * 90000);
       await Store.put("outbox", o);
     }
-    const fotos = await Promise.all((o.valores.fotos || []).map(async f =>
+    // Para solo preguntar si ya entró no hace falta volver a subir las fotos
+    const fotos = soloConfirmar ? [] : await Promise.all((o.valores.fotos || []).map(async f =>
       ({ nombre: f.nombre, dataUrl: f.blob ? await aDataUrl(f.blob) : f.dataUrl })));
     const campoFotos = F.mapa.fotos ? F.mapa.fotos.qid : null;
     const r = await Api.post({ action: "submit", form: t, answers: payload, fotos, campoFotos, cliente: o.id, folio: o.folio,
-      asignacionId: o.asignacion ? o.asignacion.id : "", sesion });
+      asignacionId: o.asignacion ? o.asignacion.id : "", sesion, soloConfirmar: !!soloConfirmar });
     return r;
   };
 
@@ -2223,11 +2257,38 @@ function App() {
       : "trabajo esperan: falta leer el formulario."), true);
     if (!listas.length) { if (manual) avisoEspera(); return; }
     setEnviando(true);
-    let ok = 0, fail = 0, devueltas = 0; const avisos = [];
+    let ok = 0, fail = 0, devueltas = 0, porConf = 0; const avisos = [];
     // Una orden cuyo formulario aún no se ha leído espera en la cola sin tocarse
+    /* Órdenes "por confirmar" (Rev.47): se envió algo pero no se supo si entró.
+       Primero se pregunta al servidor si ya está en Jotform. Si no aparece:
+       · si fue un corte de señal, pasados 7 min (más que lo máximo que puede durar
+         el servidor) se reenvía una vez: el envío anterior ya no puede llegar;
+       · si Jotform contestó sin confirmar, no se reenvía solo: regresa a borradores
+         con aviso, para revisar en Jotform y no duplicar. */
+    const ESPERA_CONFIRMAR = 7 * 60 * 1000;
     for (const o of listas.sort((a, b) => a.creada - b.creada)) {
+      if (!navigator.onLine) { fail++; continue; }
       try {
-        const r = await enviarUno(o);
+        let r;
+        if (o.porConfirmar) {
+          try { r = await enviarUno(o, true); }
+          catch (e) {
+            if (!e.noEncontrada) throw e;
+            const pc = o.porConfirmar, vencida = Date.now() - pc.desde > ESPERA_CONFIRMAR;
+            if (!vencida) { await Store.put("outbox", { ...o, porConfirmar: { ...pc, revisiones: (pc.revisiones || 0) + 1 } }); porConf++; continue; }
+            if (pc.motivo === "red" && !o.reenvioAuto) {
+              o.reenvioAuto = true; o.porConfirmar = null;
+              await Store.put("outbox", { ...o });
+              r = await enviarUno(o);
+            } else {
+              await Store.del("outbox", o.id);
+              await Store.put("drafts", { ...o, porConfirmar: null, reenvioAuto: false, actualizada: Date.now(),
+                errorEnvio: "Jotform no confirmó esta orden. Revise en Jotform (folio " + (o.folio || "—") +
+                  ") antes de volver a enviarla, para no duplicarla." });
+              devueltas++; continue;
+            }
+          }
+        } else r = await enviarUno(o);
         await Store.del("outbox", o.id);
         await Store.put("sent", { id: o.id, submissionID: r.submissionID, valores: o.valores, ts: Date.now(),
           folio: r.folio || o.folio, asignacionId: o.asignacion ? o.asignacion.id : "",
@@ -2235,11 +2296,20 @@ function App() {
         if (r.aviso) avisos.push(r.aviso);
         ok++;
       } catch (e) {
+        // Resultado desconocido: se queda en la cola "por confirmar" (ver arriba).
+        // Antes un corte de señal a medio envío ("Failed to fetch") se tomaba como
+        // rechazo y la orden volvía a borradores aunque ya estuviera en Jotform.
+        if (e.red || e.sinConfirmar) {
+          const previo = o.porConfirmar;
+          await Store.put("outbox", { ...o, intentos: (o.intentos || 0) + 1, error: "",
+            porConfirmar: previo || { desde: Date.now(), motivo: e.red ? "red" : "servidor", revisiones: 0 } });
+          porConf++;
+          continue;
+        }
         // Sin señal la orden espera en la cola y se reintenta sola: ahí no hay
         // riesgo de duplicar, porque el envío nunca llegó al servidor.
         // Si el servidor respondió con error, la orden vuelve a borradores y el
-        // reenvío queda en manos del ingeniero. Reintentar solo sobre una respuesta
-        // ambigua es justo lo que generaba órdenes duplicadas.
+        // reenvío queda en manos del ingeniero.
         const sinSenal = !navigator.onLine ||
           /sin señal|no se pudo conectar|no pudo cargar el proxy|no respondió a tiempo/i.test(e.message);
         if (sinSenal) {
@@ -2247,7 +2317,7 @@ function App() {
           fail++;
         } else {
           await Store.del("outbox", o.id);
-          await Store.put("drafts", { ...o, actualizada: Date.now(), errorEnvio: e.message });
+          await Store.put("drafts", { ...o, porConfirmar: null, actualizada: Date.now(), errorEnvio: e.message });
           devueltas++;
         }
       }
@@ -2257,6 +2327,8 @@ function App() {
     else if (devueltas) avisar(devueltas === 1
       ? "La orden regresó a borradores. Revísela y vuelva a enviarla."
       : devueltas + " órdenes regresaron a borradores.", true);
+    else if (porConf && !ok) avisar(porConf === 1 ? "Se envió, pero falta que Jotform la confirme. La app lo revisará sola en unos minutos."
+      : porConf + " órdenes esperan confirmación de Jotform. La app lo revisará sola.", true);
     else if (ok && !fail && esperan) avisar(ok + " enviada(s). " + esperan + " de renta espera(n) a que se actualice el Apps Script.", true);
     else if (ok && !fail) avisar(ok === 1 ? "Orden enviada a Jotform" : ok + " órdenes enviadas");
     else if (ok && fail) avisar(`${ok} enviada(s), ${fail} espera(n) señal`, true);
@@ -2265,6 +2337,14 @@ function App() {
   }, [enviando, datosForm, refrescar, sesion, errRenta]);
 
   useEffect(() => { if (online && listo && (esquema || esquemaRenta)) procesarCola(false); }, [online, listo, esquema, esquemaRenta]);
+
+  // Mientras haya órdenes esperando confirmación de Jotform, se revisan cada 2 minutos
+  const hayPorConfirmar = cola.some(o => o.porConfirmar);
+  useEffect(() => {
+    if (!hayPorConfirmar || !listo) return;
+    const reloj = setInterval(() => { if (navigator.onLine && document.visibilityState === "visible") procesarCola(false); }, 2 * 60 * 1000);
+    return () => clearInterval(reloj);
+  }, [hayPorConfirmar, listo, procesarCola]);
 
   // Corrige el nombre guardado si difiere del que espera el formulario
   const ajustarIngeniero = b => {

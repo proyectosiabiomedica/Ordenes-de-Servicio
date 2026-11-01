@@ -1,4 +1,4 @@
-/* Service worker · ot-ia-v47
+/* Service worker · ot-ia-v48
 
    Abrir la app: primero la copia guardada, al instante, y la red se consulta en
    segundo plano para la siguiente vez. Antes era al revés —red primero— y con
@@ -15,8 +15,9 @@
    v44 (Rev.43): Preact en lugar de React, app minificada, fotos como Blob.
    v45 (Rev.44): firmas del responsable de área y del jefe de biomédica obligatorias.
    v46 (Rev.45): orden de renta además de la orden de trabajo.
-   v47 (Rev.46): candado contra un Apps Script anterior que no distingue formularios. */
-const CACHE = 'ot-ia-v47';
+   v47 (Rev.46): candado contra un Apps Script anterior que no distingue formularios.
+   v48 (Rev.47): órdenes "por confirmar" en lugar de regresar a borradores; correo en renta. */
+const CACHE = 'ot-ia-v48';
 const BASE = self.registration.scope;
 const PROPIOS = ['index.html', 'manifest.json', 'icon-192.png', 'icon-512.png'];
 
