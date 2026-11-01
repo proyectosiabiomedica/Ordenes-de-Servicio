@@ -184,7 +184,7 @@ const Api = {
     catch (err) { const e = new Error("Respuesta incompleta del servidor"); e.red = true; throw e; }
     if (d.ok === false) {
       const e = new Error(d.error || "El servidor rechazó el envío");
-      e.sinConfirmar = !!d.sinConfirmar; e.noEncontrada = !!d.noEncontrada; throw e;
+      e.sinConfirmar = !!d.sinConfirmar; e.noEncontrada = !!d.noEncontrada; e.reintentable = !!d.reintentable; throw e;
     }
     return d;
   }
@@ -511,7 +511,12 @@ function construirPayload(valores, mapa, todos) {
 
 // Un campo es obligatorio si lo marcamos aquí o si Jotform lo exige. Tener una
 // lista propia hacía que la app dejara pasar órdenes que el formulario rechazaba.
-const correoValido = t => /^[^\s@,;]+@[^\s@,;]+\.[A-Za-z]{2,}$/.test(String(t || "").trim());
+// Igual que la regla del servidor. "hsai.com..mx" (dos puntos seguidos) pasaba la
+// revisión anterior y Jotform rechazaba la orden completa (29/9, 8 intentos).
+const correoValido = t => {
+  const s = String(t || "").trim();
+  return /^[A-Za-z0-9._%+'-]+@([A-Za-z0-9-]+\.)+[A-Za-z]{2,}$/.test(s) && s.indexOf("..") === -1 && s[0] !== "." && s.indexOf(".@") === -1;
+};
 
 function faltanRequeridos(valores, mapa, todos) {
   return (todos || TODOS).filter(c => {
@@ -2302,7 +2307,7 @@ function App() {
         if (e.red || e.sinConfirmar) {
           const previo = o.porConfirmar;
           await Store.put("outbox", { ...o, intentos: (o.intentos || 0) + 1, error: "",
-            porConfirmar: previo || { desde: Date.now(), motivo: e.red ? "red" : "servidor", revisiones: 0 } });
+            porConfirmar: previo || { desde: Date.now(), motivo: (e.red || e.reintentable) ? "red" : "servidor", revisiones: 0 } });
           porConf++;
           continue;
         }
