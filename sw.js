@@ -18,7 +18,8 @@
    v47 (Rev.46): candado contra un Apps Script anterior que no distingue formularios.
    v48 (Rev.47): órdenes "por confirmar" en lugar de regresar a borradores; correo en renta.
    v49 (Rev.48): validación estricta de correo; 504 de Jotform se confirman antes de darse por fallidos.
-   v50 (Rev.49): fotos guardadas como ArrayBuffer; corrige el error de Safari al guardar Blob. */
+   v50 (Rev.49): fotos guardadas como ArrayBuffer (error de Safari al guardar Blob); un
+   guardado fallido ya no borra el borrador. */
 const CACHE = 'ot-ia-v50';
 const BASE = self.registration.scope;
 const PROPIOS = ['index.html', 'manifest.json', 'icon-192.png', 'icon-512.png'];

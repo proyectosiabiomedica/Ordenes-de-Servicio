@@ -91,16 +91,52 @@ const Store = (() => {
     return out;
   }
   function tx(s, m) { return db.transaction(s, m).objectStore(s); }
+  function escribirUna(s, obj, borrarDe) {
+    return new Promise((res, rej) => {
+      const t = db.transaction(borrarDe ? [s, borrarDe] : [s], "readwrite");
+      t.objectStore(s).put(obj);
+      if (borrarDe && borrarDe !== s) t.objectStore(borrarDe).delete(obj.id);
+      t.oncomplete = () => res();
+      t.onerror = () => rej(t.error); t.onabort = () => rej(t.error || new Error("No se pudo guardar"));
+    });
+  }
+  // Como último recurso las fotos se guardan como texto (dataUrl), el formato
+  // anterior a Rev.43, que cualquier navegador guarda.
+  async function fotosATexto(v) {
+    if (Array.isArray(v)) return Promise.all(v.map(fotosATexto));
+    if (!esPlano(v)) return v;
+    const o = {};
+    for (const k in v) {
+      if (k === "blob" && hayBlob && v[k] instanceof Blob) o.dataUrl = await aDataUrl(v[k]);
+      else o[k] = await fotosATexto(v[k]);
+    }
+    return o;
+  }
+  async function escribirIDB(s, obj, borrarDe) {
+    if (!contieneBlob(obj)) return escribirUna(s, obj, borrarDe);
+    try { return await escribirUna(s, await empacar(obj), borrarDe); }
+    catch (e) {
+      // Si este teléfono tampoco guarda el contenido de las fotos, las nuevas
+      // ya se toman como texto desde el principio
+      aceptaBlob = false;
+      return escribirUna(s, await fotosATexto(obj), borrarDe);
+    }
+  }
 
   return {
     init, get modo() { return modo; }, get aceptaBlob() { return aceptaBlob; },
     async put(s, obj) {
-      if (modo === "indexeddb") {
-        const guardar = contieneBlob(obj) ? await empacar(obj) : obj;
-        return new Promise((res, rej) => { const r = tx(s, "readwrite").put(guardar); r.onsuccess = () => res(obj); r.onerror = () => rej(r.error); });
-      }
+      if (modo === "indexeddb") { await escribirIDB(s, obj, null); return obj; }
       if (modo === "localstorage") { localStorage.setItem(lsKey(s, obj.id), JSON.stringify(obj)); return obj; }
       mem[s][obj.id] = obj; return obj;
+    },
+    /* Pasa un registro de una tienda a otra (borradores → cola, cola → borradores).
+       Antes se borraba de una y luego se guardaba en la otra: si el guardado fallaba,
+       el borrador desaparecía (Rev.49). Ahora va en una sola transacción: si el
+       guardado falla, el borrado se deshace y el registro se queda donde estaba. */
+    async mover(de, a, obj) {
+      if (modo === "indexeddb") { await escribirIDB(a, obj, de); return obj; }
+      await this.put(a, obj); await this.del(de, obj.id); return obj;
     },
     async del(s, id) {
       if (modo === "indexeddb") return new Promise(res => { const r = tx(s, "readwrite").delete(id); r.onsuccess = () => res(); r.onerror = () => res(); });
@@ -969,7 +1005,11 @@ function Formulario({ borrador, guardar, enviar, cancelar, mapa, faltantes, def,
     </div>
     {/* Salir está disponible en cualquier paso: lo capturado ya quedó guardado */}
     <button className="btn ghost block mt10"
-      onClick={() => { guardar({ ...borrador, valores: v, seccion: sec, actualizada: Date.now() }); cancelar(); }}>
+      onClick={async () => {
+        clearTimeout(timer.current);
+        const ok = await guardar({ ...borrador, valores: v, seccion: sec, actualizada: Date.now() });
+        if (ok !== false || window.confirm("No se pudo guardar esta orden en el teléfono. Si sale se perderá lo capturado. ¿Salir de todos modos?")) cancelar();
+      }}>
       Salir y continuar después
     </button>
   </main>;
@@ -2268,10 +2308,14 @@ function App() {
     } catch (e) { avisar("No se pudo guardar: " + e.message, true); return false; }
   }, [sesion, cargarUsuariosAdmin, cargarUsuariosPublicos]);
 
+  // Devuelve false si no se pudo guardar: antes el error se perdía en silencio y
+  // al salir de la orden el borrador ya no estaba (Rev.49).
   const guardarBorrador = async (b, silencio) => {
-    await Store.put("drafts", b);
+    try { await Store.put("drafts", b); }
+    catch (e) { avisar("No se pudo guardar el borrador: " + (e && e.message || e), true); return false; }
     if (!silencio) { await refrescar(); avisar("Borrador guardado"); }
     else setBorradores(prev => { const o = prev.filter(x => x.id !== b.id); return [b, ...o]; });
+    return true;
   };
 
   const enviarUno = async (o, soloConfirmar) => {
@@ -2327,18 +2371,23 @@ function App() {
               await Store.put("outbox", { ...o });
               r = await enviarUno(o);
             } else {
-              await Store.del("outbox", o.id);
-              await Store.put("drafts", { ...o, porConfirmar: null, reenvioAuto: false, actualizada: Date.now(),
+              await Store.mover("outbox", "drafts", { ...o, porConfirmar: null, reenvioAuto: false, actualizada: Date.now(),
                 errorEnvio: "Jotform no confirmó esta orden. Revise en Jotform (folio " + (o.folio || "—") +
                   ") antes de volver a enviarla, para no duplicarla." });
               devueltas++; continue;
             }
           }
         } else r = await enviarUno(o);
-        await Store.del("outbox", o.id);
-        await Store.put("sent", { id: o.id, submissionID: r.submissionID, valores: o.valores, ts: Date.now(),
+        const enviada = { id: o.id, submissionID: r.submissionID, valores: o.valores, ts: Date.now(),
           folio: r.folio || o.folio, asignacionId: o.asignacion ? o.asignacion.id : "",
-          asignacionMarcada: !!(r.asignacion && r.asignacion.ok) });
+          asignacionMarcada: !!(r.asignacion && r.asignacion.ok) };
+        // Ya está en Jotform: si el historial no se puede guardar con fotos, se guarda
+        // sin ellas, pero nunca se trata como fallo (eso la regresaría a borradores).
+        try { await Store.mover("outbox", "sent", enviada); }
+        catch (e) {
+          await Store.del("outbox", o.id);
+          try { await Store.put("sent", { ...enviada, valores: { ...enviada.valores, fotos: [] } }); } catch (e2) {}
+        }
         if (r.aviso) avisos.push(r.aviso);
         ok++;
       } catch (e) {
@@ -2362,8 +2411,7 @@ function App() {
           await Store.put("outbox", { ...o, intentos: (o.intentos || 0) + 1, error: e.message });
           fail++;
         } else {
-          await Store.del("outbox", o.id);
-          await Store.put("drafts", { ...o, porConfirmar: null, actualizada: Date.now(), errorEnvio: e.message });
+          await Store.mover("outbox", "drafts", { ...o, porConfirmar: null, actualizada: Date.now(), errorEnvio: e.message });
           devueltas++;
         }
       }
@@ -2401,8 +2449,8 @@ function App() {
   };
 
   const encolar = async b => {
-    await Store.put("outbox", { ...b, creada: Date.now(), intentos: 0, error: "", errorEnvio: "" });
-    await Store.del("drafts", b.id);
+    try { await Store.mover("drafts", "outbox", { ...b, creada: Date.now(), intentos: 0, error: "", errorEnvio: "" }); }
+    catch (e) { avisar("No se pudo guardar la orden en este teléfono: " + (e && e.message || e) + ". No cierre la orden.", true); return; }
     setEditando(null); setTab("cola"); await refrescar();
     procesarCola(true);
   };
@@ -2698,7 +2746,11 @@ function App() {
           datosForm={datosForm} enviar={encolar} deOtros={deOtros} verTodos={verTodos}
           alternarTodos={() => setVerTodos(v => !v)}
           cola={cola} enviando={enviando} reintentar={() => procesarCola(true)}
-          devolver={async id => { const o = await Store.one("outbox", id); await Store.del("outbox", id); if (o) await Store.put("drafts", { ...o, actualizada: Date.now() }); await refrescar(); avisar("Regresó a borradores"); }}
+          devolver={async id => {
+            const o = await Store.one("outbox", id); if (!o) return;
+            try { await Store.mover("outbox", "drafts", { ...o, actualizada: Date.now() }); avisar("Regresó a borradores"); }
+            catch (e) { avisar("No se pudo regresar a borradores: " + (e && e.message || e), true); }
+            await refrescar(); }}
           abrir={b => setEditando(ajustarIngeniero(b))}
           nuevo={t => setEditando(t === "renta" ? nuevaOrden(ingeniero, "renta")
             : nuevaOrden(nombreDeFormulario(ingeniero, mapa)))}
