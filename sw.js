@@ -1,4 +1,4 @@
-/* Service worker · ot-ia-v49
+/* Service worker · ot-ia-v50
 
    Abrir la app: primero la copia guardada, al instante, y la red se consulta en
    segundo plano para la siguiente vez. Antes era al revés —red primero— y con
@@ -17,8 +17,9 @@
    v46 (Rev.45): orden de renta además de la orden de trabajo.
    v47 (Rev.46): candado contra un Apps Script anterior que no distingue formularios.
    v48 (Rev.47): órdenes "por confirmar" en lugar de regresar a borradores; correo en renta.
-   v49 (Rev.48): validación estricta de correo; 504 de Jotform se confirman antes de darse por fallidos. */
-const CACHE = 'ot-ia-v49';
+   v49 (Rev.48): validación estricta de correo; 504 de Jotform se confirman antes de darse por fallidos.
+   v50 (Rev.49): fotos guardadas como ArrayBuffer; corrige el error de Safari al guardar Blob. */
+const CACHE = 'ot-ia-v50';
 const BASE = self.registration.scope;
 const PROPIOS = ['index.html', 'manifest.json', 'icon-192.png', 'icon-512.png'];
 

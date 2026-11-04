@@ -25,17 +25,53 @@ const Store = (() => {
       setTimeout(() => res(null), 6000);
     });
   }
+  /* Fotos en IndexedDB (Rev.49): Safari en iPhone/iPad falla de forma intermitente
+     al guardar un Blob ("Error preparing Blob/File data to be stored in object
+     store"), sobre todo con fotos reales y con la app instalada en la pantalla de
+     inicio; la prueba con un Blob pequeño pasaba y el error salía al guardar el
+     borrador. Por eso el Blob nunca llega a IndexedDB: se guarda su contenido como
+     ArrayBuffer (que Safari sí guarda bien) y se vuelve a armar el Blob al leer.
+     Los registros que ya tenían un Blob guardado se siguen leyendo igual. */
+  const hayBlob = typeof Blob !== "undefined";
+  const esPlano = v => v && typeof v === "object" && (Object.getPrototypeOf(v) === Object.prototype || Array.isArray(v));
+  function contieneBlob(v) {
+    if (hayBlob && v instanceof Blob) return true;
+    if (!esPlano(v)) return false;
+    for (const k in v) if (contieneBlob(v[k])) return true;
+    return false;
+  }
+  function aBuffer(b) {
+    if (b.arrayBuffer) return b.arrayBuffer();
+    return new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = () => rej(r.error); r.readAsArrayBuffer(b); });
+  }
+  // Copia el objeto cambiando cada Blob por { __ab, type }; no toca el original (es estado de React)
+  async function empacar(v) {
+    if (hayBlob && v instanceof Blob) return { __ab: await aBuffer(v), type: v.type || "" };
+    if (Array.isArray(v)) return Promise.all(v.map(empacar));
+    if (esPlano(v)) { const o = {}; for (const k in v) o[k] = await empacar(v[k]); return o; }
+    return v;
+  }
+  // Lo leído de IndexedDB es una copia nueva: se puede cambiar en su lugar
+  function desempacar(v) {
+    if (!esPlano(v)) return v;
+    for (const k in v) {
+      const x = v[k];
+      if (x && typeof x === "object" && x.__ab instanceof ArrayBuffer && hayBlob) v[k] = new Blob([x.__ab], { type: x.type || "" });
+      else if (esPlano(x)) desempacar(x);
+    }
+    return v;
+  }
   let aceptaBlob = false;
   async function probarBlob() {
-    // Algunos Safari viejos aceptan IndexedDB pero no guardan Blob: se prueba una vez
+    // Se prueba una vez que IndexedDB guarde el contenido de un archivo (ArrayBuffer)
     try {
       await new Promise((res, rej) => {
         const t = db.transaction("meta", "readwrite"), st = t.objectStore("meta");
-        st.put({ id: "__blob", b: new Blob(["ok"], { type: "text/plain" }) });
+        st.put({ id: "__blob", b: new ArrayBuffer(8) });
         st.delete("__blob");
         t.oncomplete = res; t.onerror = () => rej(t.error); t.onabort = () => rej(t.error);
       });
-      aceptaBlob = typeof Blob !== "undefined";
+      aceptaBlob = hayBlob;
     } catch (e) { aceptaBlob = false; }
   }
   async function init() {
@@ -59,7 +95,10 @@ const Store = (() => {
   return {
     init, get modo() { return modo; }, get aceptaBlob() { return aceptaBlob; },
     async put(s, obj) {
-      if (modo === "indexeddb") return new Promise((res, rej) => { const r = tx(s, "readwrite").put(obj); r.onsuccess = () => res(obj); r.onerror = () => rej(r.error); });
+      if (modo === "indexeddb") {
+        const guardar = contieneBlob(obj) ? await empacar(obj) : obj;
+        return new Promise((res, rej) => { const r = tx(s, "readwrite").put(guardar); r.onsuccess = () => res(obj); r.onerror = () => rej(r.error); });
+      }
       if (modo === "localstorage") { localStorage.setItem(lsKey(s, obj.id), JSON.stringify(obj)); return obj; }
       mem[s][obj.id] = obj; return obj;
     },
@@ -69,14 +108,14 @@ const Store = (() => {
       delete mem[s][id];
     },
     async all(s) {
-      if (modo === "indexeddb") return new Promise(res => { const r = tx(s, "readonly").getAll(); r.onsuccess = () => res(r.result || []); r.onerror = () => res([]); });
+      if (modo === "indexeddb") return new Promise(res => { const r = tx(s, "readonly").getAll(); r.onsuccess = () => res((r.result || []).map(desempacar)); r.onerror = () => res([]); });
       if (modo === "localstorage") return lsAll(s);
       return Object.values(mem[s]);
     },
     // Lectura directa por clave: antes se leía TODA la tienda (esquema, historial de
     // envíos, avisos…) para quedarse con un solo registro, unas diez veces al abrir.
     async one(s, id) {
-      if (modo === "indexeddb") return new Promise(res => { const r = tx(s, "readonly").get(id); r.onsuccess = () => res(r.result || null); r.onerror = () => res(null); });
+      if (modo === "indexeddb") return new Promise(res => { const r = tx(s, "readonly").get(id); r.onsuccess = () => res(desempacar(r.result || null)); r.onerror = () => res(null); });
       if (modo === "localstorage") { try { return JSON.parse(localStorage.getItem(lsKey(s, id))); } catch (e) { return null; } }
       return mem[s][id] || null;
     }
@@ -550,6 +589,8 @@ function faltanRequeridos(valores, mapa, todos) {
    base64. Ocupan un 33% menos, no se copian como cadenas gigantes cada vez que se
    autoguarda el borrador y la miniatura se muestra sin decodificar texto. Solo se
    convierten a base64 en el momento de enviarlas al servidor.
+   Desde Rev.49 el Store las guarda en IndexedDB como ArrayBuffer y las devuelve
+   como Blob (Safari falla al guardar Blob directamente), así que aquí no cambia nada.
    Si el teléfono no admite Blob en IndexedDB (o se usa localStorage), se queda
    el formato anterior, dataUrl, que sigue siendo válido en todo el código. */
 /* El formulario pide el monto "con número y letra", pero en Jotform es un campo
