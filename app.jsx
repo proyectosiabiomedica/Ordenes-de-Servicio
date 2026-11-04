@@ -25,17 +25,53 @@ const Store = (() => {
       setTimeout(() => res(null), 6000);
     });
   }
+  /* Fotos en IndexedDB (Rev.49): Safari en iPhone/iPad falla de forma intermitente
+     al guardar un Blob ("Error preparing Blob/File data to be stored in object
+     store"), sobre todo con fotos reales y con la app instalada en la pantalla de
+     inicio; la prueba con un Blob pequeño pasaba y el error salía al guardar el
+     borrador. Por eso el Blob nunca llega a IndexedDB: se guarda su contenido como
+     ArrayBuffer (que Safari sí guarda bien) y se vuelve a armar el Blob al leer.
+     Los registros que ya tenían un Blob guardado se siguen leyendo igual. */
+  const hayBlob = typeof Blob !== "undefined";
+  const esPlano = v => v && typeof v === "object" && (Object.getPrototypeOf(v) === Object.prototype || Array.isArray(v));
+  function contieneBlob(v) {
+    if (hayBlob && v instanceof Blob) return true;
+    if (!esPlano(v)) return false;
+    for (const k in v) if (contieneBlob(v[k])) return true;
+    return false;
+  }
+  function aBuffer(b) {
+    if (b.arrayBuffer) return b.arrayBuffer();
+    return new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = () => rej(r.error); r.readAsArrayBuffer(b); });
+  }
+  // Copia el objeto cambiando cada Blob por { __ab, type }; no toca el original (es estado de React)
+  async function empacar(v) {
+    if (hayBlob && v instanceof Blob) return { __ab: await aBuffer(v), type: v.type || "" };
+    if (Array.isArray(v)) return Promise.all(v.map(empacar));
+    if (esPlano(v)) { const o = {}; for (const k in v) o[k] = await empacar(v[k]); return o; }
+    return v;
+  }
+  // Lo leído de IndexedDB es una copia nueva: se puede cambiar en su lugar
+  function desempacar(v) {
+    if (!esPlano(v)) return v;
+    for (const k in v) {
+      const x = v[k];
+      if (x && typeof x === "object" && x.__ab instanceof ArrayBuffer && hayBlob) v[k] = new Blob([x.__ab], { type: x.type || "" });
+      else if (esPlano(x)) desempacar(x);
+    }
+    return v;
+  }
   let aceptaBlob = false;
   async function probarBlob() {
-    // Algunos Safari viejos aceptan IndexedDB pero no guardan Blob: se prueba una vez
+    // Se prueba una vez que IndexedDB guarde el contenido de un archivo (ArrayBuffer)
     try {
       await new Promise((res, rej) => {
         const t = db.transaction("meta", "readwrite"), st = t.objectStore("meta");
-        st.put({ id: "__blob", b: new Blob(["ok"], { type: "text/plain" }) });
+        st.put({ id: "__blob", b: new ArrayBuffer(8) });
         st.delete("__blob");
         t.oncomplete = res; t.onerror = () => rej(t.error); t.onabort = () => rej(t.error);
       });
-      aceptaBlob = typeof Blob !== "undefined";
+      aceptaBlob = hayBlob;
     } catch (e) { aceptaBlob = false; }
   }
   async function init() {
@@ -55,13 +91,52 @@ const Store = (() => {
     return out;
   }
   function tx(s, m) { return db.transaction(s, m).objectStore(s); }
+  function escribirUna(s, obj, borrarDe) {
+    return new Promise((res, rej) => {
+      const t = db.transaction(borrarDe ? [s, borrarDe] : [s], "readwrite");
+      t.objectStore(s).put(obj);
+      if (borrarDe && borrarDe !== s) t.objectStore(borrarDe).delete(obj.id);
+      t.oncomplete = () => res();
+      t.onerror = () => rej(t.error); t.onabort = () => rej(t.error || new Error("No se pudo guardar"));
+    });
+  }
+  // Como último recurso las fotos se guardan como texto (dataUrl), el formato
+  // anterior a Rev.43, que cualquier navegador guarda.
+  async function fotosATexto(v) {
+    if (Array.isArray(v)) return Promise.all(v.map(fotosATexto));
+    if (!esPlano(v)) return v;
+    const o = {};
+    for (const k in v) {
+      if (k === "blob" && hayBlob && v[k] instanceof Blob) o.dataUrl = await aDataUrl(v[k]);
+      else o[k] = await fotosATexto(v[k]);
+    }
+    return o;
+  }
+  async function escribirIDB(s, obj, borrarDe) {
+    if (!contieneBlob(obj)) return escribirUna(s, obj, borrarDe);
+    try { return await escribirUna(s, await empacar(obj), borrarDe); }
+    catch (e) {
+      // Si este teléfono tampoco guarda el contenido de las fotos, las nuevas
+      // ya se toman como texto desde el principio
+      aceptaBlob = false;
+      return escribirUna(s, await fotosATexto(obj), borrarDe);
+    }
+  }
 
   return {
     init, get modo() { return modo; }, get aceptaBlob() { return aceptaBlob; },
     async put(s, obj) {
-      if (modo === "indexeddb") return new Promise((res, rej) => { const r = tx(s, "readwrite").put(obj); r.onsuccess = () => res(obj); r.onerror = () => rej(r.error); });
+      if (modo === "indexeddb") { await escribirIDB(s, obj, null); return obj; }
       if (modo === "localstorage") { localStorage.setItem(lsKey(s, obj.id), JSON.stringify(obj)); return obj; }
       mem[s][obj.id] = obj; return obj;
+    },
+    /* Pasa un registro de una tienda a otra (borradores → cola, cola → borradores).
+       Antes se borraba de una y luego se guardaba en la otra: si el guardado fallaba,
+       el borrador desaparecía (Rev.49). Ahora va en una sola transacción: si el
+       guardado falla, el borrado se deshace y el registro se queda donde estaba. */
+    async mover(de, a, obj) {
+      if (modo === "indexeddb") { await escribirIDB(a, obj, de); return obj; }
+      await this.put(a, obj); await this.del(de, obj.id); return obj;
     },
     async del(s, id) {
       if (modo === "indexeddb") return new Promise(res => { const r = tx(s, "readwrite").delete(id); r.onsuccess = () => res(); r.onerror = () => res(); });
@@ -69,14 +144,14 @@ const Store = (() => {
       delete mem[s][id];
     },
     async all(s) {
-      if (modo === "indexeddb") return new Promise(res => { const r = tx(s, "readonly").getAll(); r.onsuccess = () => res(r.result || []); r.onerror = () => res([]); });
+      if (modo === "indexeddb") return new Promise(res => { const r = tx(s, "readonly").getAll(); r.onsuccess = () => res((r.result || []).map(desempacar)); r.onerror = () => res([]); });
       if (modo === "localstorage") return lsAll(s);
       return Object.values(mem[s]);
     },
     // Lectura directa por clave: antes se leía TODA la tienda (esquema, historial de
     // envíos, avisos…) para quedarse con un solo registro, unas diez veces al abrir.
     async one(s, id) {
-      if (modo === "indexeddb") return new Promise(res => { const r = tx(s, "readonly").get(id); r.onsuccess = () => res(r.result || null); r.onerror = () => res(null); });
+      if (modo === "indexeddb") return new Promise(res => { const r = tx(s, "readonly").get(id); r.onsuccess = () => res(desempacar(r.result || null)); r.onerror = () => res(null); });
       if (modo === "localstorage") { try { return JSON.parse(localStorage.getItem(lsKey(s, id))); } catch (e) { return null; } }
       return mem[s][id] || null;
     }
@@ -550,6 +625,8 @@ function faltanRequeridos(valores, mapa, todos) {
    base64. Ocupan un 33% menos, no se copian como cadenas gigantes cada vez que se
    autoguarda el borrador y la miniatura se muestra sin decodificar texto. Solo se
    convierten a base64 en el momento de enviarlas al servidor.
+   Desde Rev.49 el Store las guarda en IndexedDB como ArrayBuffer y las devuelve
+   como Blob (Safari falla al guardar Blob directamente), así que aquí no cambia nada.
    Si el teléfono no admite Blob en IndexedDB (o se usa localStorage), se queda
    el formato anterior, dataUrl, que sigue siendo válido en todo el código. */
 /* El formulario pide el monto "con número y letra", pero en Jotform es un campo
@@ -928,7 +1005,11 @@ function Formulario({ borrador, guardar, enviar, cancelar, mapa, faltantes, def,
     </div>
     {/* Salir está disponible en cualquier paso: lo capturado ya quedó guardado */}
     <button className="btn ghost block mt10"
-      onClick={() => { guardar({ ...borrador, valores: v, seccion: sec, actualizada: Date.now() }); cancelar(); }}>
+      onClick={async () => {
+        clearTimeout(timer.current);
+        const ok = await guardar({ ...borrador, valores: v, seccion: sec, actualizada: Date.now() });
+        if (ok !== false || window.confirm("No se pudo guardar esta orden en el teléfono. Si sale se perderá lo capturado. ¿Salir de todos modos?")) cancelar();
+      }}>
       Salir y continuar después
     </button>
   </main>;
@@ -2227,10 +2308,14 @@ function App() {
     } catch (e) { avisar("No se pudo guardar: " + e.message, true); return false; }
   }, [sesion, cargarUsuariosAdmin, cargarUsuariosPublicos]);
 
+  // Devuelve false si no se pudo guardar: antes el error se perdía en silencio y
+  // al salir de la orden el borrador ya no estaba (Rev.49).
   const guardarBorrador = async (b, silencio) => {
-    await Store.put("drafts", b);
+    try { await Store.put("drafts", b); }
+    catch (e) { avisar("No se pudo guardar el borrador: " + (e && e.message || e), true); return false; }
     if (!silencio) { await refrescar(); avisar("Borrador guardado"); }
     else setBorradores(prev => { const o = prev.filter(x => x.id !== b.id); return [b, ...o]; });
+    return true;
   };
 
   const enviarUno = async (o, soloConfirmar) => {
@@ -2286,18 +2371,23 @@ function App() {
               await Store.put("outbox", { ...o });
               r = await enviarUno(o);
             } else {
-              await Store.del("outbox", o.id);
-              await Store.put("drafts", { ...o, porConfirmar: null, reenvioAuto: false, actualizada: Date.now(),
+              await Store.mover("outbox", "drafts", { ...o, porConfirmar: null, reenvioAuto: false, actualizada: Date.now(),
                 errorEnvio: "Jotform no confirmó esta orden. Revise en Jotform (folio " + (o.folio || "—") +
                   ") antes de volver a enviarla, para no duplicarla." });
               devueltas++; continue;
             }
           }
         } else r = await enviarUno(o);
-        await Store.del("outbox", o.id);
-        await Store.put("sent", { id: o.id, submissionID: r.submissionID, valores: o.valores, ts: Date.now(),
+        const enviada = { id: o.id, submissionID: r.submissionID, valores: o.valores, ts: Date.now(),
           folio: r.folio || o.folio, asignacionId: o.asignacion ? o.asignacion.id : "",
-          asignacionMarcada: !!(r.asignacion && r.asignacion.ok) });
+          asignacionMarcada: !!(r.asignacion && r.asignacion.ok) };
+        // Ya está en Jotform: si el historial no se puede guardar con fotos, se guarda
+        // sin ellas, pero nunca se trata como fallo (eso la regresaría a borradores).
+        try { await Store.mover("outbox", "sent", enviada); }
+        catch (e) {
+          await Store.del("outbox", o.id);
+          try { await Store.put("sent", { ...enviada, valores: { ...enviada.valores, fotos: [] } }); } catch (e2) {}
+        }
         if (r.aviso) avisos.push(r.aviso);
         ok++;
       } catch (e) {
@@ -2321,8 +2411,7 @@ function App() {
           await Store.put("outbox", { ...o, intentos: (o.intentos || 0) + 1, error: e.message });
           fail++;
         } else {
-          await Store.del("outbox", o.id);
-          await Store.put("drafts", { ...o, porConfirmar: null, actualizada: Date.now(), errorEnvio: e.message });
+          await Store.mover("outbox", "drafts", { ...o, porConfirmar: null, actualizada: Date.now(), errorEnvio: e.message });
           devueltas++;
         }
       }
@@ -2360,8 +2449,8 @@ function App() {
   };
 
   const encolar = async b => {
-    await Store.put("outbox", { ...b, creada: Date.now(), intentos: 0, error: "", errorEnvio: "" });
-    await Store.del("drafts", b.id);
+    try { await Store.mover("drafts", "outbox", { ...b, creada: Date.now(), intentos: 0, error: "", errorEnvio: "" }); }
+    catch (e) { avisar("No se pudo guardar la orden en este teléfono: " + (e && e.message || e) + ". No cierre la orden.", true); return; }
     setEditando(null); setTab("cola"); await refrescar();
     procesarCola(true);
   };
@@ -2657,7 +2746,11 @@ function App() {
           datosForm={datosForm} enviar={encolar} deOtros={deOtros} verTodos={verTodos}
           alternarTodos={() => setVerTodos(v => !v)}
           cola={cola} enviando={enviando} reintentar={() => procesarCola(true)}
-          devolver={async id => { const o = await Store.one("outbox", id); await Store.del("outbox", id); if (o) await Store.put("drafts", { ...o, actualizada: Date.now() }); await refrescar(); avisar("Regresó a borradores"); }}
+          devolver={async id => {
+            const o = await Store.one("outbox", id); if (!o) return;
+            try { await Store.mover("outbox", "drafts", { ...o, actualizada: Date.now() }); avisar("Regresó a borradores"); }
+            catch (e) { avisar("No se pudo regresar a borradores: " + (e && e.message || e), true); }
+            await refrescar(); }}
           abrir={b => setEditando(ajustarIngeniero(b))}
           nuevo={t => setEditando(t === "renta" ? nuevaOrden(ingeniero, "renta")
             : nuevaOrden(nombreDeFormulario(ingeniero, mapa)))}
